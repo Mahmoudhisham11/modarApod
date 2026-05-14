@@ -1,0 +1,27 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // مرجع لمدار — انسخ إلى Firebase Console → Firestore → Rules
+    // يجب أن تسمح للعميل بقراءة/كتابة users (أو قواعدك الحالية إن وُجدت).
+    match /users/{docId} {
+      allow read, write: if true;
+    }
+
+    // تطوير: اسمح بقراءة/تحديث الوسائل وحذف/إنشاء العمليات. شدّد القواعد لاحقًا (مثلاً request.auth + branch).
+    match /operations/{opId} {
+      allow read, create, delete: if true;
+    }
+
+    match /numbers/{id} {
+      allow read, update: if true;
+    }
+
+    match /instapayLines/{id} {
+      allow read, update: if true;
+    }
+
+    match /machines/{id} {
+      allow read, update: if true;
+    }
+  }
+}
