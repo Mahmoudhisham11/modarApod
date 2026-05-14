@@ -1,36 +1,163 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# مدار (Madar) — دليل النظام
 
-## Getting Started
+تطبيق ويب لإدارة عمليات المحل (فروع، خطوط، ماكينات، إلخ) بواجهة عربية (اتجاه RTL). المشروع مبني على **Next.js 16** (App Router) و**React 19**، مع **Firebase Firestore** كقاعدة بيانات من المتصفح، و**Tailwind CSS 4** ومكوّنات واجهة (زر، حوار، Sheet، إلخ) مستوحاة من نمط shadcn/Radix.
 
-First, run the development server:
+---
+
+## 1. التقنيات والتشغيل
+
+| الطبقة | الاستخدام |
+|--------|------------|
+| Next.js | صفحات التطبيق، تخطيط لوحة التحكم، مسارات API للجلسة |
+| Firebase | تهيئة التطبيق و`getFirestore` في `app/firebase.js` |
+| ESLint | `npm run lint` |
+| البناء | `npm run build` ثم `npm run start` للإنتاج |
+
+تشغيل التطوير:
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+ثم فتح العنوان الذي يعرضه الطرفية (عادة `http://localhost:3000`).
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+---
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 2. الهيكل العام للتطبيق
 
-## Learn More
+### 2.1 مجموعتان من التخطيطات
 
-To learn more about Next.js, take a look at the following resources:
+- **`app/(auth)/`**: صفحات الضيف — تسجيل الدخول (`/login`) وإعادة توجيه التسجيل (`/register` → `/login?mode=register`).
+- **`app/(dashboard)/`**: كل الصفحات المحمية داخل **`DashboardShell`**: شريط جانبي، رأس صفحة، محتوى رئيسي. التخطيط يستدعي `getSessionUser()`؛ إن لم توجد جلسة يُعاد التوجيه إلى `/login`.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### 2.2 الحماية على مستويين
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+1. **`middleware.js`**: يفحص كوكي الجلسة على كل المسارات ما عدا `/login` و`/register` ومسارات `/api` وملفات ثابتة. بدون جلسة صالحة يُحوَّل المستخدم إلى صفحة الدخول (مع معامل `from` لمسار المصدر).
+2. **`app/(dashboard)/layout.js`**: يكرر التحقق من الجلسة على الخادم (`redirect("/login")`) لضمان عدم عرض لوحة التحكم بدون مستخدم.
 
-## Deploy on Vercel
+### 2.3 التنقل (القائمة الجانبية)
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+المسارات المعرفة في `lib/constants/navigation.js`:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| المسار | الوصف في الواجهة |
+|--------|-------------------|
+| `/` | لوحة التحكم |
+| `/operations` | العمليات |
+| `/branches` | الفروع |
+| `/lines` | الخطوط |
+| `/users` | المستخدمون |
+| `/reports` | التقارير |
+| `/settings` | الإعدادات |
+
+الشريط الجانبي قابل للطي على الشاشات الكبيرة، وعلى الجوال يُفتح كـ **Sheet** من الرأس.
+
+---
+
+## 3. المصادقة والجلسة
+
+### 3.1 تخزين المستخدمين في Firestore
+
+- المجموعة: **`users`**.
+- **تسجيل الدخول**: استعلام `where("email", "==", البريد)`، ثم مقارنة **`password`** المخزّنة كنص مع ما أدخله المستخدم (لا يوجد حالياً تشفير كلمات مرور على العميل — هذا قرار تصميم يجب مراجعته أمنياً للإنتاج).
+- **الاشتراك**: إذا كان **`isSubscribed === false`** يُرفض الدخول برسالة تطلب التواصل مع المطوّر لتفعيل البرنامج.
+- عند نجاح الدخول تُقرأ من المستند: `name`, `email`, **`shop`** (يُستخدم كاسم الفرع في النظام)، `role` (افتراضياً `cashier` إن وُجدت قيمة).
+
+### 3.2 إنشاء حساب (من نفس صفحة `/login?mode=register`)
+
+- يُنشأ مستند جديد في **`users`** بالحقول: الاسم، البريد، كلمة المرور، **`shop`** (اسم الفرع)، `role: "cashier"`، **`isSubscribed: false`**.
+- بعد النجاح يُعاد المستخدم لواجهة تسجيل الدخول (لا يُسجَّل دخوله تلقائياً حتى يفعّل المطوّر الاشتراك يدوياً في Firestore إن رغبتم).
+
+### 3.3 كوكي الجلسة
+
+- مسار **`POST /api/auth/session`**: يستقبل `email`, `name`, `branch` (هنا يُمرَّر **`shop`** من Firestore كـ `branch` في الجلسة)، `role`, `remember`.
+- يُنشئ رمز جلسة (JSON مُرمَّز Base64URL) ويُخزَّن في كوكي **`httpOnly`** اسمها `madar_session`، مع `maxAge` أطول إذا اختار المستخدم «إبقائي مسجّلاً».
+- مسار **`POST /api/auth/logout`**: يحذف الكوكي.
+- **`lib/auth/session.js`**: ترميز وفك ترميز الرمز؛ **`getSessionUser()`** في `lib/auth/get-session.js` يقرأ الكوكي في مكوّنات الخادم (مثل صفحة الخطوط).
+
+**ملاحظة:** الجلسة ليست JWT موقّعاً بسرية خادم — هي حمولة قابلة للفك من الخادم فقط عند وجود الكوكي. لبيئة إنتاج صارمة يُفضَّل تقوية النموذج (توقيع، HTTPS فقط، إلخ).
+
+---
+
+## 4. صفحات لوحة التحكم — ما هو مُنفَّذ فعلياً؟
+
+| الصفحة | الحالة |
+|--------|--------|
+| **الرئيسية `/`** | واجهة placeholder: عنوان + `EmptyState` (نص يوضح أن الملخص سيُربط لاحقاً بمصادر بيانات). |
+| **العمليات `/operations`** | placeholder. |
+| **الفروع `/branches`** | placeholder. |
+| **المستخدمون `/users`** | placeholder. |
+| **التقارير `/reports`** | placeholder. |
+| **الإعدادات `/settings`** | placeholder. |
+| **الخطوط `/lines`** | **مُنفَّذ بالكامل** — انظر القسم التالي. |
+
+صفحة الخطوط تستقبل من الخادم **`shop`** من `user.branch` (أي قيمة `shop` من مستند المستخدم عند آخر تسجيل دخول) و**`userEmail`** لحقول المستندات الجديدة.
+
+---
+
+## 5. صفحة الخطوط — المحور الوظيفي الحالي
+
+الواجهة في **`components/lines/lines-page-client.js`** مع نماذج في **`line-form-sheet.js`** و**`machine-form-sheet.js`**.
+
+### 5.1 تبويبات الصفحة (Hub)
+
+ثلاثة تبويبات فقط (لا يوجد «كل الخطوط» ولا «البطاقات البنكية» في الواجهة — التعريفات القديمة لـ `bank_cards` تبقى في `lib/lines/channel-types.js` لدعم بيانات قديمة في `channelLabel` إن لزم):
+
+1. **الاتصالات** (`telecom`)
+2. **انستاباي** (`instapay`)
+3. **الماكينات** (`machines`)
+
+### 5.2 تبويب الاتصالات
+
+- **المجموعة:** `numbers` في Firestore.
+- **الاستعلام:** `where("shop", "==", shop)` عبر **`lib/lines/numbers-service.js`**.
+- **العرض:** يُفلتر على الواجهة الصفوف التي **`channelType`** فيها غائب أو يساوي **`telecom`** (استبعاد قنوات أخرى إن وُجدت في نفس المجموعة).
+- **الميزات:** بحث نصي في الحقول الرئيسية، بطاقات KPI (عدد الخطوط، إجمالي الرصيد من حقل المبلغ، ليميتات السحب/الإيداع الشهرية)، جدول بأعمدة الخط، إضافة/تعديل عبر **Sheet**، حذف مع **Dialog** تأكيد.
+- **النموذج:** **`LineFormSheet`** يبني الحمولة عبر **`buildLineDocumentPayload`** في `lib/lines/line-payload.js` مع **`channelType: "telecom"`** (أو الافتراضي).
+
+### 5.3 تبويب انستاباي
+
+- **المجموعة:** **`instapayLines`** — **`lib/instapay/instapay-lines-service.js`** (جلب، إنشاء، تحديث، حذف) بنفس أسلوب `numbers-service`.
+- **الواجهة:** نفس شكل الجدول والبحث وKPI تقريباً مثل الاتصالات.
+- **`LineFormSheet`** يُحفظ على **`instapayLines`** مع **`channelType: "instapay"`**، ويمنع تكرار رقم الخط ضمن **`existingRows`** لنفس المجموعة المعروضة.
+
+### 5.4 تبويب الماكينات
+
+- **المجموعة:** **`machines`** — **`lib/machines/machines-service.js`**.
+- **حقول المستند عند الإنشاء:** `name`, `balance` (رقم), `shop`, `userEmail`, **`createdAt`** (`serverTimestamp()`). التحديث يغيّر الاسم والرصيد فقط.
+- **الواجهة:** بحث باسم الماكينة، KPI (عدد الماكينات المعروضة بعد البحث، مجموع `balance`)، جدول عمودين، **MachineFormSheet** (حقلان)، حذف بتأكيد.
+
+### 5.5 قواعد Firestore
+
+الكتابة من المتصفح تتطلب قواعد تسمح بقراءة/كتابة **`numbers`**, **`instapayLines`**, **`machines`** (و **`users`** لتسجيل الدخول والتسجيل) وفق نموذج الأمان لديكم — غالباً تقييداً بـ `shop` يطابق مستخدم الجلسة. يوجد تعليق في الكود يذكّر بضبط القواعد لـ `instapayLines` و`machines` إن ظهرت أخطاء `permission-denied`.
+
+---
+
+## 6. ملفات ومساعدة مهمة
+
+| الملف / المجلد | الدور |
+|----------------|--------|
+| `app/firebase.js` | تهيئة Firebase + تصدير `db` لـ Firestore |
+| `lib/auth/*` | الجلسة وفك الترميز وقراءة المستخدم من الكوكي |
+| `lib/lines/line-payload.js` | بناء كائن مستند الخط (يشمل `channelType` اختياري) |
+| `lib/lines/phone-normalize.js` | التحقق من عدم تكرار رقم الخط في القائمة |
+| `lib/format/locale-numbers.js` | تنسيق الأرقام للعرض (إنجليزي في الجداول حيث يُستخدم) |
+| `components/ui/*` | أزرار، مدخلات، حوارات، Sheet، إلخ |
+| `components/dashboard/kpi-grid.js` | شبكة بطاقات المؤشرات في صفحة الخطوط والماكينات |
+
+---
+
+## 7. ملخص «ما الذي يعمل اليوم؟»
+
+- **يعمل:** تسجيل الدخول والتسجيل عبر Firestore، الجلسة بالكوكي، حماية المسارات، هيكل لوحة التحكم بالعربية، **صفحة الخطوط الكاملة** (اتصالات + انستاباي + ماكينات) مع Firestore.
+- **لم يُربط بعد:** محتوى لوحة التحكم، العمليات، الفروع، المستخدمون، التقارير، الإعدادات — كلها واجهات مبدئية جاهزة للربط لاحقاً.
+
+---
+
+## 8. تحذير أمني (إنتاج)
+
+- إعدادات Firebase الحالية في **`app/firebase.js`** تُعرَّض للعميل (طبيعة تطبيقات الويب). يجب أن تعتمد الأمان على **قواعد Firestore** وعدم تخزين أسرار في الواجهة.
+- كلمات المرور في **`users`** تُخزَّن وتُقارن كنص صريح في تدفق الدخول الحالي — يُنصح بشدة باستبدال ذلك بهاش آمن وتحقق خادمي قبل أي إطلاق واسع.
+
+إذا رغبت في توسيع هذا الملف لاحقاً (مخططات ER لمجموعات Firestore، أمثلة مستندات JSON، أو خطوات نشر)، يمكن إضافتها كأقسام فرعية دون تغيير منطق الكود.
+"# modarApod" 
