@@ -25,6 +25,7 @@ import { deleteInstapayLineDocument, fetchInstapayLinesByShop } from "@/lib/inst
 import { LINES_HUB_TABS } from "@/lib/lines/channel-types";
 import { deleteMachineDocument, fetchMachinesByShop } from "@/lib/machines/machines-service";
 import { deleteNumberDocument, fetchNumbersByShop } from "@/lib/lines/numbers-service";
+import { reconcileShopLineLimits } from "@/lib/lines/reconcile-line-limits";
 import { cn } from "@/lib/utils";
 
 /** @param {unknown} v */
@@ -164,7 +165,15 @@ function LinesDataSection({ shop, userEmail, mode }) {
     (async () => {
       setLoading(true);
       try {
-        const data = isTelecom ? await fetchNumbersByShop(shop) : await fetchInstapayLinesByShop(shop);
+        let data = isTelecom ? await fetchNumbersByShop(shop) : await fetchInstapayLinesByShop(shop);
+        try {
+          const { updated } = await reconcileShopLineLimits(shop);
+          if (updated > 0) {
+            data = isTelecom ? await fetchNumbersByShop(shop) : await fetchInstapayLinesByShop(shop);
+          }
+        } catch (reErr) {
+          console.error("reconcileShopLineLimits", reErr);
+        }
         if (cancelled) return;
         setRows(data);
         setError(null);
@@ -182,7 +191,15 @@ function LinesDataSection({ shop, userEmail, mode }) {
 
   const silentRefresh = useCallback(async () => {
     try {
-      const data = isTelecom ? await fetchNumbersByShop(shop) : await fetchInstapayLinesByShop(shop);
+      let data = isTelecom ? await fetchNumbersByShop(shop) : await fetchInstapayLinesByShop(shop);
+      try {
+        const { updated } = await reconcileShopLineLimits(shop);
+        if (updated > 0) {
+          data = isTelecom ? await fetchNumbersByShop(shop) : await fetchInstapayLinesByShop(shop);
+        }
+      } catch (reErr) {
+        console.error("reconcileShopLineLimits", reErr);
+      }
       setRows(data);
       setError(null);
     } catch (e) {

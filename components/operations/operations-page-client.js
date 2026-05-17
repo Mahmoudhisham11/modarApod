@@ -18,6 +18,7 @@ import {
 import { fetchInstapayLinesByShop } from "@/lib/instapay/instapay-lines-service";
 import { parseFiniteNumberOrZero } from "@/lib/lines/line-payload";
 import { fetchNumbersByShop } from "@/lib/lines/numbers-service";
+import { reconcileShopLineLimits } from "@/lib/lines/reconcile-line-limits";
 import { fetchMachinesByShop } from "@/lib/machines/machines-service";
 import {
   OPERATION_TYPE,
@@ -171,6 +172,13 @@ export function OperationsPageClient({ shop, userEmail, userName }) {
     }
     setLoading(true);
     try {
+      if (sourceKind === SOURCE_KIND.TELECOM || sourceKind === SOURCE_KIND.INSTAPAY) {
+        try {
+          await reconcileShopLineLimits(s);
+        } catch (reErr) {
+          console.error("reconcileShopLineLimits", reErr);
+        }
+      }
       if (sourceKind === SOURCE_KIND.TELECOM) {
         const data = await fetchNumbersByShop(s);
         setSources(data.filter(isTelecomRow).map((d) => ({ id: d.id, row: d })));

@@ -1,11 +1,16 @@
-import { EmptyState } from "@/components/common/empty-state";
 import { PageHeader } from "@/components/common/page-header";
+import { ReportsPageClient } from "@/components/reports/reports-page-client";
+import { getSessionUser } from "@/lib/auth/get-session";
 
-export default function ReportsPage() {
+export default async function ReportsPage() {
+  const user = await getSessionUser();
+  const shop = user?.branch ?? "";
+  const branchLabel = user?.branch ?? "";
+
   return (
     <>
-      <PageHeader title="التقارير" description="تقارير الأداء والفترات." />
-      <EmptyState title="التقارير" description="لا توجد تقارير جاهزة بعد." />
+      <PageHeader title="التقارير" />
+      <ReportsPageClient shop={shop} branchLabel={branchLabel} />
     </>
   );
 }

@@ -26,12 +26,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import {
-  buildLineDocumentPayload,
-  parseFiniteNumberOrZero,
-  todayYmdLocal,
-  currentMonthNumber,
-} from "@/lib/lines/line-payload";
+import { buildLineDocumentPayload, parseFiniteNumberOrZero } from "@/lib/lines/line-payload";
 import { isLinePhoneTaken } from "@/lib/lines/phone-normalize";
 import { createNumberDocument, updateNumberDocument } from "@/lib/lines/numbers-service";
 import {
@@ -178,14 +173,11 @@ export function LineFormSheet({
       mode === "edit" && initialRow ? asString(initialRow.originalDepositLimit) : "";
     const originalWithdrawLimit =
       mode === "edit" && initialRow ? asString(initialRow.originalWithdrawLimit) : "";
-    const lastDailyReset =
-      mode === "edit" && initialRow
-        ? asString(initialRow.lastDailyReset).trim() || todayYmdLocal()
-        : todayYmdLocal();
-    const lastMonthlyReset =
-      mode === "edit" && initialRow
-        ? parseFiniteNumberOrZero(asString(initialRow.lastMonthlyReset)) || currentMonthNumber()
-        : currentMonthNumber();
+
+    const dDep = parseFiniteNumberOrZero(dailyDeposit);
+    const dWdr = parseFiniteNumberOrZero(dailyWithdraw);
+    const mDep = parseFiniteNumberOrZero(depositLimit);
+    const mWdr = parseFiniteNumberOrZero(withdrawLimit);
 
     const payload = buildLineDocumentPayload({
       name,
@@ -193,10 +185,14 @@ export function LineFormSheet({
       userEmail,
       shop,
       channelType: lineKind === "instapay" ? "instapay" : "telecom",
-      dailyDeposit: parseFiniteNumberOrZero(dailyDeposit),
-      dailyWithdraw: parseFiniteNumberOrZero(dailyWithdraw),
-      depositLimit: parseFiniteNumberOrZero(depositLimit),
-      withdrawLimit: parseFiniteNumberOrZero(withdrawLimit),
+      dailyDeposit: dDep,
+      dailyWithdraw: dWdr,
+      depositLimit: mDep,
+      withdrawLimit: mWdr,
+      capDailyWithdraw: dWdr,
+      capDailyDeposit: dDep,
+      capMonthlyWithdraw: mWdr,
+      capMonthlyDeposit: mDep,
       amount,
       idNumber,
       address,
@@ -205,8 +201,6 @@ export function LineFormSheet({
       activationDate,
       originalDepositLimit,
       originalWithdrawLimit,
-      lastDailyReset,
-      lastMonthlyReset,
     });
 
     const collectionHint = persistTarget === "instapayLines" ? "instapayLines" : "numbers";
@@ -248,8 +242,9 @@ export function LineFormSheet({
         <SheetHeader className="text-start">
           <SheetTitle>{mode === "create" ? sheetTitleCreate : sheetTitleEdit}</SheetTitle>
           <SheetDescription>
-            الفرع: <span className="font-medium text-foreground">{shop}</span>. حقول الليميت أدناه تُخزَّن كـ«متبقي»
-            وتنقص عند تنفيذ عمليات من صفحة العمليات؛ أعد القيم يدويًا عند بداية يوم/شهر أو عند التعبئة.
+            الفرع: <span className="font-medium text-foreground">{shop}</span>. حقول الليميت أدناه هي السقف
+            والمتبقي؛ عند التنفيذ ينقص المتبقي. يعود المتبقي اليومي كل ليلة (منتصف الليل بتوقيت السيرفر) والشهري مع
+            بداية شهر جديد إلى نفس القيم المحفوظة هنا.
           </SheetDescription>
         </SheetHeader>
         <form onSubmit={handleSubmit} className="flex flex-1 flex-col gap-4 py-4">
