@@ -1,18 +1,19 @@
 "use client";
 
-import { Bell, Menu, PanelLeftClose, PanelLeft, Search } from "lucide-react";
+import { Menu, PanelLeftClose, PanelLeft, Search } from "lucide-react";
 
+import { LimitAlertsMenu } from "@/components/layout/limit-alerts-menu";
 import { Button } from "@/components/ui/button";
 
 /**
  * @param {{
- *   user: { email: string; name: string; role: string; branch?: string };
+ *   shop?: string;
  *   onOpenNav: () => void;
  *   sidebarCollapsed?: boolean;
  *   onToggleSidebar?: () => void;
  * }} props
  */
-export function AppHeader({ user, onOpenNav, sidebarCollapsed = false, onToggleSidebar }) {
+export function AppHeader({ shop = "", onOpenNav, sidebarCollapsed = false, onToggleSidebar }) {
   return (
     <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-3 border-b border-border bg-card/60 px-4 backdrop-blur">
       <Button
@@ -50,24 +51,11 @@ export function AppHeader({ user, onOpenNav, sidebarCollapsed = false, onToggleS
         </div>
       </div>
       <div className="ms-auto flex items-center gap-3">
-        <span className="hidden max-w-[14rem] flex-col items-end truncate text-end sm:flex md:max-w-xs">
-          <span className="truncate text-xs font-medium text-foreground">{user.name}</span>
-          {user.branch ? (
-            <span className="truncate text-[10px] text-muted-foreground">{user.branch}</span>
-          ) : null}
-        </span>
         <span className="hidden items-center gap-1.5 text-xs text-muted-foreground sm:inline-flex">
           <span className="h-1.5 w-1.5 rounded-full bg-success" />
           النظام جاهز
         </span>
-        <button
-          type="button"
-          className="relative flex h-9 w-9 items-center justify-center rounded-md hover:bg-muted"
-          aria-label="الإشعارات"
-        >
-          <Bell className="h-4 w-4 text-muted-foreground" />
-          <span className="absolute top-2 end-2 h-1.5 w-1.5 rounded-full bg-accent" />
-        </button>
+        <LimitAlertsMenu shop={shop} />
       </div>
     </header>
   );

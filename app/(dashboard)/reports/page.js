@@ -10,7 +10,7 @@ export default async function ReportsPage() {
   return (
     <>
       <PageHeader title="التقارير" />
-      <ReportsPageClient shop={shop} branchLabel={branchLabel} />
+      <ReportsPageClient shop={shop} branchLabel={branchLabel} userEmail={user?.email ?? ""} />
     </>
   );
 }

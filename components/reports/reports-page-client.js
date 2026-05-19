@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useFeatureLock } from "@/hooks/use-feature-lock";
 import { FileDown, FileSpreadsheet, Printer, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
@@ -24,9 +25,10 @@ import { ReportsListTable } from "./reports-list-table";
 import { useShopReports } from "./use-shop-reports";
 
 /**
- * @param {{ shop: string; branchLabel: string }} props
+ * @param {{ shop: string; branchLabel: string; userEmail: string }} props
  */
-export function ReportsPageClient({ shop, branchLabel }) {
+export function ReportsPageClient({ shop, branchLabel, userEmail }) {
+  const { loading: lockLoading, authorized } = useFeatureLock(userEmail, "reports");
   const { reports, loading, error, reload } = useShopReports(shop);
   const [preset, setPreset] = useState(/** @type {"today" | "week" | "month" | "all" | "custom"} */ ("month"));
   const [dateFrom, setDateFrom] = useState("");
@@ -109,10 +111,24 @@ export function ReportsPageClient({ shop, branchLabel }) {
     );
   }
 
+  if (lockLoading) {
+    return <p className="text-sm text-muted-foreground">جاري التحقق من الصلاحية…</p>;
+  }
+
+  if (!authorized) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>لا يمكن عرض التقارير</CardTitle>
+        </CardHeader>
+      </Card>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-6">
-      <Card>
-        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 space-y-0">
+      <Card className="border-border/60 shadow-[var(--shadow-card)]">
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 space-y-0 pb-2">
           <CardTitle className="text-base font-medium">الفترة</CardTitle>
           <div className="flex flex-wrap gap-2">
             <Button type="button" variant="outline" size="sm" disabled={loading} onClick={() => void reload()}>

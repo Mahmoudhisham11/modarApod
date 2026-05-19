@@ -1,11 +1,15 @@
-import { EmptyState } from "@/components/common/empty-state";
 import { PageHeader } from "@/components/common/page-header";
+import { SettingsPageClient } from "@/components/settings/settings-page-client";
+import { getSessionUser } from "@/lib/auth/get-session";
 
-export default function SettingsPage() {
+export default async function SettingsPage() {
+  const user = await getSessionUser();
+  const userEmail = user?.email ?? "";
+
   return (
     <>
-      <PageHeader title="الإعدادات" description="إعدادات المنشأة والتكاملات." />
-      <EmptyState title="إعدادات النظام" description="لم تُعرَّف إعدادات بعد." />
+      <PageHeader title="الإعدادات" />
+      <SettingsPageClient userEmail={userEmail} />
     </>
   );
 }

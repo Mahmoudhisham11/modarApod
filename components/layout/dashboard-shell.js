@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { SubscriptionGuard } from "@/components/auth/subscription-guard";
 import { AppHeader } from "@/components/layout/app-header";
 import { AppSidebar } from "@/components/layout/app-sidebar";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
@@ -49,12 +50,14 @@ export function DashboardShell({ user, children }) {
         )}
       >
         <AppHeader
-          user={user}
+          shop={user.branch ?? ""}
           onOpenNav={() => setMobileOpen(true)}
           sidebarCollapsed={sidebarCollapsed}
           onToggleSidebar={() => setSidebarCollapsed((c) => !c)}
         />
-        <main className="flex-1 p-6">{children}</main>
+        <main className="flex-1 p-6">
+          <SubscriptionGuard userEmail={user.email}>{children}</SubscriptionGuard>
+        </main>
       </div>
     </div>
   );

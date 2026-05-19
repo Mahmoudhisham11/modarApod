@@ -32,8 +32,10 @@ import {
   SOURCE_KIND,
   SOURCE_KIND_LABEL,
 } from "@/lib/operations/constants";
+import { requireLockPassword, useUserLocks } from "@/hooks/use-feature-lock";
 import { deleteOperationWithReversal } from "@/lib/operations/operations-service";
 
+import { OperationMobileCards } from "./operation-mobile-cards";
 import { useShopOperations } from "./use-shop-operations";
 
 const FILTER_ALL = "__all__";
@@ -102,10 +104,18 @@ function toastFirestoreError(err, hint) {
   toast.error(hint ? `حدث خطأ (${hint})` : "حدث خطأ");
 }
 
+/** @param {number | string} value */
+function maskAmount(value, hidden) {
+  if (hidden) return "••••";
+  return value;
+}
+
 /**
- * @param {{ shop: string; branchLabel: string }} props
+ * @param {{ shop: string; branchLabel: string; userEmail: string }} props
  */
-export function DashboardPageClient({ shop, branchLabel }) {
+export function DashboardPageClient({ shop, branchLabel, userEmail }) {
+  const userLocks = useUserLocks(userEmail);
+  const hideMoney = Boolean(userLocks?.lockMoney);
   const { ops, loading, error, reload } = useShopOperations(shop);
   const [searchInput, setSearchInput] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -146,6 +156,14 @@ export function DashboardPageClient({ shop, branchLabel }) {
     return Math.round(sum * 100) / 100;
   }, [filteredOps]);
 
+  const requestDelete = useCallback(
+    (target) => {
+      if (!requireLockPassword(userLocks, "daily")) return;
+      setDeleteTarget(target);
+    },
+    [userLocks],
+  );
+
   const confirmDelete = useCallback(async () => {
     if (!deleteTarget || !shop.trim()) return;
     setDeleteBusy(true);
@@ -184,7 +202,7 @@ export function DashboardPageClient({ shop, branchLabel }) {
   return (
     <div className="flex flex-col gap-6">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <Card>
+        <Card className="border-border/60 shadow-[var(--shadow-card)]">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-base font-medium">العمليات</CardTitle>
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
@@ -193,16 +211,18 @@ export function DashboardPageClient({ shop, branchLabel }) {
           </CardHeader>
           <CardContent className="text-2xl font-semibold tabular-nums">{filteredOps.length}</CardContent>
         </Card>
-        <Card>
+        <Card className="border-border/60 shadow-[var(--shadow-card)]">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-base font-medium">الأرباح</CardTitle>
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
               <CircleDollarSign className="h-5 w-5" aria-hidden />
             </div>
           </CardHeader>
-          <CardContent className="text-2xl font-semibold tabular-nums">{totalCommissionFiltered.toFixed(2)}</CardContent>
+          <CardContent className="text-2xl font-semibold tabular-nums">
+            {maskAmount(totalCommissionFiltered.toFixed(2), hideMoney)}
+          </CardContent>
         </Card>
-        <Card>
+        <Card className="border-border/60 shadow-[var(--shadow-card)]">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-base font-medium">ليميت مستهلك (سحب/إيداع)</CardTitle>
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
@@ -211,17 +231,19 @@ export function DashboardPageClient({ shop, branchLabel }) {
           </CardHeader>
           <CardContent className="space-y-1 text-sm tabular-nums">
             <div>
-              اليوم: سحب {kpisFiltered.dayWithdraw.toFixed(2)} — إيداع {kpisFiltered.dayDeposit.toFixed(2)}
+              اليوم: سحب {maskAmount(kpisFiltered.dayWithdraw.toFixed(2), hideMoney)} — إيداع{" "}
+              {maskAmount(kpisFiltered.dayDeposit.toFixed(2), hideMoney)}
             </div>
             <div>
-              الشهر: سحب {kpisFiltered.monthWithdraw.toFixed(2)} — إيداع {kpisFiltered.monthDeposit.toFixed(2)}
+              الشهر: سحب {maskAmount(kpisFiltered.monthWithdraw.toFixed(2), hideMoney)} — إيداع{" "}
+              {maskAmount(kpisFiltered.monthDeposit.toFixed(2), hideMoney)}
             </div>
           </CardContent>
         </Card>
       </div>
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+      <Card className="border-border/60 shadow-[var(--shadow-card)]">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-base font-medium">بحث وفلترة</CardTitle>
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
             <PieChart className="h-5 w-5" aria-hidden />
@@ -270,8 +292,8 @@ export function DashboardPageClient({ shop, branchLabel }) {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
+      <Card className="border-border/60 shadow-[var(--shadow-card)]">
+        <CardHeader className="pb-2">
           <CardTitle className="text-base font-medium">قائمة العمليات</CardTitle>
         </CardHeader>
         <CardContent>
@@ -280,6 +302,13 @@ export function DashboardPageClient({ shop, branchLabel }) {
           ) : error ? (
             <p className="mb-3 text-sm text-destructive">تعذّر التحميل.</p>
           ) : null}
+          <OperationMobileCards
+            operations={filteredOps}
+            hideMoney={hideMoney}
+            onPrint={handlePrintInvoice}
+            onDelete={requestDelete}
+          />
+          <div className="hidden md:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -317,8 +346,8 @@ export function DashboardPageClient({ shop, branchLabel }) {
                         <span className="text-xs text-muted-foreground">{stLabel}</span>
                       </div>
                     </TableCell>
-                    <TableCell className="tabular-nums">{valStr}</TableCell>
-                    <TableCell className="tabular-nums">{comStr}</TableCell>
+                    <TableCell className="tabular-nums">{maskAmount(valStr, hideMoney)}</TableCell>
+                    <TableCell className="tabular-nums">{maskAmount(comStr, hideMoney)}</TableCell>
                     <TableCell>
                       <div className="flex flex-wrap items-center gap-1">
                         <Button
@@ -340,7 +369,7 @@ export function DashboardPageClient({ shop, branchLabel }) {
                           title="حذف العملية"
                           aria-label="حذف"
                           onClick={() =>
-                            setDeleteTarget({
+                            requestDelete({
                               id,
                               label: `${typeLabel} — ${valStr} — ${srcLabel}`,
                             })
@@ -355,8 +384,9 @@ export function DashboardPageClient({ shop, branchLabel }) {
               })}
             </TableBody>
           </Table>
+          </div>
           {!loading && filteredOps.length === 0 && (
-            <p className="mt-4 text-center text-sm text-muted-foreground">لا توجد عمليات مطابقة.</p>
+            <p className="mt-4 text-center text-sm text-muted-foreground md:mt-4">لا توجد عمليات مطابقة.</p>
           )}
         </CardContent>
       </Card>

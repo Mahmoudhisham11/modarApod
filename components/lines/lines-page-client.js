@@ -9,8 +9,9 @@ import { PageHeader } from "@/components/common/page-header";
 import { KpiGrid } from "@/components/dashboard/kpi-grid";
 import { MachineFormSheet } from "@/components/machines/machine-form-sheet";
 import { LineFormSheet } from "@/components/lines/line-form-sheet";
+import { LineMobileCards } from "@/components/lines/line-mobile-cards";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -25,7 +26,11 @@ import { deleteInstapayLineDocument, fetchInstapayLinesByShop } from "@/lib/inst
 import { LINES_HUB_TABS } from "@/lib/lines/channel-types";
 import { deleteMachineDocument, fetchMachinesByShop } from "@/lib/machines/machines-service";
 import { deleteNumberDocument, fetchNumbersByShop } from "@/lib/lines/numbers-service";
-import { reconcileShopLineLimits } from "@/lib/lines/reconcile-line-limits";
+import { useFeatureLock } from "@/hooks/use-feature-lock";
+import {
+  resetShopLineLimitsIfNeeded,
+  scheduleDailyLimitReset,
+} from "@/lib/lines/reset-limits-client";
 import { cn } from "@/lib/utils";
 
 /** @param {unknown} v */
@@ -160,20 +165,25 @@ function LinesDataSection({ shop, userEmail, mode }) {
     [collectionHint],
   );
 
+  const fetchLinesWithReset = useCallback(async () => {
+    let data = isTelecom ? await fetchNumbersByShop(shop) : await fetchInstapayLinesByShop(shop);
+    try {
+      const { updated } = await resetShopLineLimitsIfNeeded(shop);
+      if (updated > 0) {
+        data = isTelecom ? await fetchNumbersByShop(shop) : await fetchInstapayLinesByShop(shop);
+      }
+    } catch (reErr) {
+      console.error("resetShopLineLimitsIfNeeded", reErr);
+    }
+    return data;
+  }, [shop, isTelecom]);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setLoading(true);
       try {
-        let data = isTelecom ? await fetchNumbersByShop(shop) : await fetchInstapayLinesByShop(shop);
-        try {
-          const { updated } = await reconcileShopLineLimits(shop);
-          if (updated > 0) {
-            data = isTelecom ? await fetchNumbersByShop(shop) : await fetchInstapayLinesByShop(shop);
-          }
-        } catch (reErr) {
-          console.error("reconcileShopLineLimits", reErr);
-        }
+        const data = await fetchLinesWithReset();
         if (cancelled) return;
         setRows(data);
         setError(null);
@@ -187,25 +197,30 @@ function LinesDataSection({ shop, userEmail, mode }) {
     return () => {
       cancelled = true;
     };
-  }, [shop, isTelecom, applyFetchError]);
+  }, [fetchLinesWithReset, applyFetchError]);
 
   const silentRefresh = useCallback(async () => {
     try {
-      let data = isTelecom ? await fetchNumbersByShop(shop) : await fetchInstapayLinesByShop(shop);
-      try {
-        const { updated } = await reconcileShopLineLimits(shop);
-        if (updated > 0) {
-          data = isTelecom ? await fetchNumbersByShop(shop) : await fetchInstapayLinesByShop(shop);
-        }
-      } catch (reErr) {
-        console.error("reconcileShopLineLimits", reErr);
-      }
+      const data = await fetchLinesWithReset();
       setRows(data);
       setError(null);
     } catch (e) {
       applyFetchError(e);
     }
-  }, [shop, isTelecom, applyFetchError]);
+  }, [fetchLinesWithReset, applyFetchError]);
+
+  useEffect(() => {
+    const s = shop.trim();
+    if (!s) return undefined;
+    return scheduleDailyLimitReset(s, async () => {
+      try {
+        const { updated } = await resetShopLineLimitsIfNeeded(s);
+        if (updated > 0) await silentRefresh();
+      } catch (err) {
+        console.error("scheduleDailyLimitReset", err);
+      }
+    });
+  }, [shop, silentRefresh]);
 
   const filteredRows = useMemo(() => {
     const base = isTelecom ? rows.filter(isTelecomRow) : rows;
@@ -292,13 +307,7 @@ function LinesDataSection({ shop, userEmail, mode }) {
 
   const loadingLabel = isTelecom ? "جاري تحميل الخطوط…" : "جاري تحميل سجلات انستاباي…";
   const emptyTitle = isTelecom ? "لا توجد خطوط اتصالات" : "لا توجد سجلات انستاباي";
-  const emptyDesc = isTelecom
-    ? `لا توجد مستندات في numbers لحقل shop = «${shop}».`
-    : `لا توجد مستندات في instapayLines لحقل shop = «${shop}».`;
   const addButtonLabel = isTelecom ? "إضافة خط" : "إضافة انستاباي";
-  const noResultsDesc = isTelecom
-    ? "لا توجد خطوط اتصالات تطابق البحث. غيّر البحث أو امسحه."
-    : "لا توجد سجلات انستاباي تطابق البحث. غيّر البحث أو امسحه.";
   const deleteTitle = isTelecom ? "تأكيد حذف الخط" : "تأكيد حذف سجل انستاباي";
   const deleteIntro = isTelecom ? "هل أنت متأكد من حذف الخط" : "هل أنت متأكد من حذف سجل انستاباي";
 
@@ -325,7 +334,7 @@ function LinesDataSection({ shop, userEmail, mode }) {
         <Card className="mt-6 border-destructive/50 bg-destructive/5 shadow-[var(--shadow-card)]">
           <CardHeader>
             <CardTitle className="text-destructive">تعذر الجلب</CardTitle>
-            <CardDescription>{error}</CardDescription>
+            <p className="text-sm text-destructive">{error}</p>
           </CardHeader>
         </Card>
       ) : null}
@@ -333,7 +342,7 @@ function LinesDataSection({ shop, userEmail, mode }) {
       {loading ? (
         <p className="mt-8 text-center text-sm text-muted-foreground">{loadingLabel}</p>
       ) : !error && rows.length === 0 ? (
-        <EmptyState title={emptyTitle} description={emptyDesc} />
+        <EmptyState title={emptyTitle} />
       ) : null}
 
       {!error && !loading && rows.length > 0 ? (
@@ -343,11 +352,19 @@ function LinesDataSection({ shop, userEmail, mode }) {
       ) : null}
 
       {!error && !loading && rows.length > 0 && filteredRows.length === 0 ? (
-        <EmptyState title="لا نتائج" description={noResultsDesc} />
+        <EmptyState title="لا نتائج" />
       ) : null}
 
       {!error && !loading && filteredRows.length > 0 ? (
-        <div className="mt-6 overflow-x-auto rounded-xl border border-border shadow-[var(--shadow-card)]">
+        <>
+          <LineMobileCards
+            rows={filteredRows}
+            columns={lineColumns}
+            cellValue={cellValue}
+            onEdit={openEdit}
+            onDelete={requestDelete}
+          />
+          <div className="mt-6 hidden overflow-x-auto rounded-xl border border-border/60 shadow-[var(--shadow-card)] md:block">
           <table className="w-full min-w-[72rem] text-sm">
             <thead className="border-b bg-muted/50">
               <tr>
@@ -390,7 +407,8 @@ function LinesDataSection({ shop, userEmail, mode }) {
               ))}
             </tbody>
           </table>
-        </div>
+          </div>
+        </>
       ) : null}
 
       <Dialog
@@ -574,7 +592,7 @@ function MachinesSection({ shop, userEmail }) {
         <Card className="mt-6 border-destructive/50 bg-destructive/5 shadow-[var(--shadow-card)]">
           <CardHeader>
             <CardTitle className="text-destructive">تعذر الجلب</CardTitle>
-            <CardDescription>{error}</CardDescription>
+            <p className="text-sm text-destructive">{error}</p>
           </CardHeader>
         </Card>
       ) : null}
@@ -582,7 +600,7 @@ function MachinesSection({ shop, userEmail }) {
       {loading ? (
         <p className="mt-8 text-center text-sm text-muted-foreground">جاري تحميل الماكينات…</p>
       ) : !error && rows.length === 0 ? (
-        <EmptyState title="لا توجد ماكينات" description={`لا توجد مستندات في machines لحقل shop = «${shop}».`} />
+        <EmptyState title="لا توجد ماكينات" />
       ) : null}
 
       {!error && !loading && rows.length > 0 ? (
@@ -592,11 +610,26 @@ function MachinesSection({ shop, userEmail }) {
       ) : null}
 
       {!error && !loading && rows.length > 0 && filteredRows.length === 0 ? (
-        <EmptyState title="لا نتائج" description="لا توجد ماكينات تطابق البحث. غيّر البحث أو امسحه." />
+        <EmptyState title="لا نتائج" />
       ) : null}
 
       {!error && !loading && filteredRows.length > 0 ? (
-        <div className="mt-6 overflow-x-auto rounded-xl border border-border shadow-[var(--shadow-card)]">
+        <>
+          <LineMobileCards
+            rows={filteredRows}
+            columns={[
+              { key: "name", header: "اسم الماكينة" },
+              { key: "balance", header: "الرصيد", format: (v) => asNumberDisplay(v) },
+            ]}
+            cellValue={(row, col) => {
+              if (col.key === "balance") return asNumberDisplay(row.balance);
+              return asString(row[col.key]) || "—";
+            }}
+            onEdit={openEdit}
+            onDelete={setMachineToDelete}
+            primaryKeys={["name", "balance"]}
+          />
+          <div className="mt-6 hidden overflow-x-auto rounded-xl border border-border/60 shadow-[var(--shadow-card)] md:block">
           <table className="w-full min-w-[24rem] text-sm">
             <thead className="border-b bg-muted/50">
               <tr>
@@ -631,7 +664,8 @@ function MachinesSection({ shop, userEmail }) {
               ))}
             </tbody>
           </table>
-        </div>
+          </div>
+        </>
       ) : null}
 
       <Dialog
@@ -684,24 +718,38 @@ function MachinesSection({ shop, userEmail }) {
 export function LinesPageClient({ shop, userEmail }) {
   const shopTrim = typeof shop === "string" ? shop.trim() : "";
   const [hubTab, setHubTab] = useState("telecom");
+  const { loading: lockLoading, authorized } = useFeatureLock(userEmail, "numbers");
 
   if (!shopTrim) {
     return (
       <>
         <PageHeader title="الخطوط" size="compact" />
-        <Card className="mt-6 shadow-[var(--shadow-card)]">
+        <Card className="mt-6 border-border/60 shadow-[var(--shadow-card)]">
           <CardHeader>
             <CardTitle>اسم الفرع غير مضبوط</CardTitle>
-            <CardDescription>
-              لمطابقة مستندات Firestore في مجموعة numbers يجب أن يطابق حقل <code className="text-xs">shop</code> اسم
-              الفرع في ملفك الشخصي (الجلسة). أضف اسم الفرع عند التسجيل أو حدّث المستخدم في Firestore.
-            </CardDescription>
           </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">
-              البريد الحالي في الجلسة: <span className="font-medium text-foreground">{userEmail || "—"}</span>
-            </p>
-          </CardContent>
+        </Card>
+      </>
+    );
+  }
+
+  if (lockLoading) {
+    return (
+      <>
+        <PageHeader title="الخطوط" size="compact" />
+        <p className="mt-6 text-sm text-muted-foreground">جاري التحقق من الصلاحية…</p>
+      </>
+    );
+  }
+
+  if (!authorized) {
+    return (
+      <>
+        <PageHeader title="الخطوط" size="compact" />
+        <Card className="mt-6 border-border/60 shadow-[var(--shadow-card)]">
+          <CardHeader>
+            <CardTitle>لا يمكن عرض الخطوط</CardTitle>
+          </CardHeader>
         </Card>
       </>
     );

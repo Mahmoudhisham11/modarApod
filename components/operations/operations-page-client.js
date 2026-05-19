@@ -5,7 +5,7 @@ import { toast } from "sonner";
 
 import { PageHeader } from "@/components/common/page-header";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -18,7 +18,6 @@ import {
 import { fetchInstapayLinesByShop } from "@/lib/instapay/instapay-lines-service";
 import { parseFiniteNumberOrZero } from "@/lib/lines/line-payload";
 import { fetchNumbersByShop } from "@/lib/lines/numbers-service";
-import { reconcileShopLineLimits } from "@/lib/lines/reconcile-line-limits";
 import { fetchMachinesByShop } from "@/lib/machines/machines-service";
 import {
   OPERATION_TYPE,
@@ -172,13 +171,6 @@ export function OperationsPageClient({ shop, userEmail, userName }) {
     }
     setLoading(true);
     try {
-      if (sourceKind === SOURCE_KIND.TELECOM || sourceKind === SOURCE_KIND.INSTAPAY) {
-        try {
-          await reconcileShopLineLimits(s);
-        } catch (reErr) {
-          console.error("reconcileShopLineLimits", reErr);
-        }
-      }
       if (sourceKind === SOURCE_KIND.TELECOM) {
         const data = await fetchNumbersByShop(s);
         setSources(data.filter(isTelecomRow).map((d) => ({ id: d.id, row: d })));
@@ -353,30 +345,25 @@ export function OperationsPageClient({ shop, userEmail, userName }) {
 
   if (!shop.trim()) {
     return (
-      <>
-        <PageHeader title="العمليات" description="تنفيذ عملية جديدة على وسيلة مرتبطة بالفرع." />
-        <Card className="mt-6 shadow-[var(--shadow-card)]">
+      <div className="flex flex-col gap-6">
+        <PageHeader title="العمليات" />
+        <Card className="border-border/60 shadow-[var(--shadow-card)]">
           <CardHeader>
             <CardTitle>اسم الفرع غير مضبوط</CardTitle>
-            <CardDescription>يجب أن يطابق حقل الفرع في الجلسة قيمة shop في Firestore.</CardDescription>
           </CardHeader>
         </Card>
-      </>
+      </div>
     );
   }
 
   return (
-    <>
-      <PageHeader title="العمليات" description="تنفيذ عملية جديدة على وسيلة مرتبطة بالفرع." />
+    <div className="flex flex-col gap-6">
+      <PageHeader title="العمليات" />
 
-      <form onSubmit={onSubmit} className="mt-6 space-y-6">
-        <Card className="shadow-[var(--shadow-card)]">
-          <CardHeader>
+      <form onSubmit={onSubmit} className="flex flex-col gap-6">
+        <Card className="border-border/60 shadow-[var(--shadow-card)]">
+          <CardHeader className="pb-2">
             <CardTitle>نموذج التنفيذ</CardTitle>
-            <CardDescription>
-              اختر نوع الوسيلة ثم الوسيلة ونوع العملية، ثم المبلغ والعمولة. على الخطوط، حقول الليميت في Firestore
-              تُخزَّن كـ«متبقي» وتنقص مع كل عملية (مثل الرصيد).
-            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
             <div className="space-y-1.5">
@@ -588,13 +575,9 @@ export function OperationsPageClient({ shop, userEmail, userName }) {
           </CardContent>
         </Card>
 
-        <Card className="shadow-[var(--shadow-card)]">
-          <CardHeader>
+        <Card className="border-border/60 shadow-[var(--shadow-card)]">
+          <CardHeader className="pb-2">
             <CardTitle>ترشيح الوسائل المناسبة</CardTitle>
-            <CardDescription>
-              تُعرض فقط الوسائل التي يمكن تنفيذ العملية عليها بهذا المبلغ ونوع العملية الحاليين (رصيد وليميتات
-              للخطوط، رصيد للماكينات). اختر وسيلة من القائمة أو من القائمة المنسدلة أعلاه إن وُجدت ضمن الترشيح.
-            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             {amountNum <= 0 ? (
@@ -663,6 +646,6 @@ export function OperationsPageClient({ shop, userEmail, userName }) {
           </CardContent>
         </Card>
       </form>
-    </>
+    </div>
   );
 }

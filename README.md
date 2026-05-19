@@ -131,14 +131,20 @@ npm run dev
 
 الكتابة من المتصفح تتطلب قواعد تسمح بقراءة/كتابة **`numbers`**, **`instapayLines`**, **`machines`** (و **`users`** لتسجيل الدخول والتسجيل) وفق نموذج الأمان لديكم — غالباً تقييداً بـ `shop` يطابق مستخدم الجلسة. يوجد تعليق في الكود يذكّر بضبط القواعد لـ `instapayLines` و`machines` إن ظهرت أخطاء `permission-denied`.
 
-### 5.6 إعادة ضبط الليميت (منتصف الليل)
+### 5.6 الليميت والمتبقي (مثل cashat-main)
 
-- حقول السقف `capDailyWithdraw`, `capDailyDeposit`, `capMonthlyWithdraw`, `capMonthlyDeposit` تُنشأ وتُحدَّث من **`LineFormSheet`** مع نفس أرقام المتبقي الظاهرة في النموذج؛ العمليات تنقص المتبقي فقط ولا تُغيّر السقف.
-- حقلا التتبع `lastDailyReset` (`YYYY-MM-DD`) و`lastMonthlyReset` (رقم شهر 1–12) لا يكتبهما الفورم؛ يحدِّثهما **الجدولة أو المزامنة على العميل**.
-- **وظيفة مجدولة (مفضَّلة):** في مجلد **`functions/`** الدالة المصدَّرة **`resetLineLimitsAtMidnight`** تعيد المتبقي اليومي كل ليلة الساعة 00:00 بتوقيت **`Africa/Cairo`** (أو **`LIMIT_RESET_TZ`** على بيئة الدالة)، والمتبقي الشهري عند أول تنفيذ بعد تغيّر الشهر. المنطق مكرَّر أيضاً في **`functions/limit-reset-compute.js`** ويجب إبقاؤه متطابقاً مع **`lib/lines/limit-reset-compute.js`**.
-- **النشر:** `cd functions && npm install` ثم من الجذر `firebase deploy --only functions` (يتطلّب CLI مُهيَّأ وحسابًا يفعِّل Scheduled Functions).
-- **احتياطي على العميل:** **`reconcileShopLineLimits(shop)`** في `lib/lines/reconcile-line-limits.js` تُستدعى بعد جلب خطوط الفرع في صفحتي الخطوط والعمليات؛ التوقيت هنا وفق جهاز المتصفح وليس بديلاً تاماً عن الخادم.
-- لمستندات قديمة بلا حقول `cap*`: أوّل تهيئة تستخدم المتبقي الحالي كسقف (قد لا يكون دقيقاً إن كان المبلغ مستهلكاً) — أنصح بحفظ الخط من النموذج مرة واحدة بعد النشر أو تعديل الحقول يدوياً في Console.
+- على مستند الخط (`numbers` / `instapayLines`): **`dailyWithdraw`**, **`dailyDeposit`**, **`withdrawLimit`**, **`depositLimit`** = **متبقي** يُنقص عند كل عملية عبر **`createOperationWithUpdates`**.
+- **`originalWithdrawLimit`** / **`originalDepositLimit`**: سقف شهري يُضبط عند إنشاء/تعديل الخط من النموذج.
+- **إنشاء خط:** ليميت يومي = **60000**؛ شهري من حقول النموذج + `original*`.
+- **تجديد يومي:** عند فتح صفحة الخطوط + مؤقت منتصف الليل (**`Africa/Cairo`**): `dailyWithdraw` و `dailyDeposit` → **60000** إذا تغيّر `lastDailyReset`.
+- **تجديد شهري:** `withdrawLimit` / `depositLimit` ← `original*` (أو 60000) عند تغيّر `lastMonthlyReset` (شهر 0–11 مثل main).
+- المنطق في **`lib/lines/reset-limits-client.js`** — لا Cloud Functions.
+
+### 5.7 صلاحيات المستخدم (أقفال الواجهة)
+
+- **`isSubscribed`**: رفض الدخول عند التسجيل؛ مراقبة أثناء الجلسة (`SubscriptionGuard`).
+- **`lockPassword`** + **`lockReports`**, **`lockNumbers`**, **`lockMoney`**, **`lockCash`**, **`lockDaily`**: من صفحة **الإعدادات**؛ حماية واجهة فقط (مثل cashat-main).
+- **`lib/auth/user-locks.js`**, **`hooks/use-feature-lock.js`**, **`hooks/use-subscription-guard.js`**.
 
 
 
@@ -150,7 +156,8 @@ npm run dev
 | `lib/auth/*` | الجلسة وفك الترميز وقراءة المستخدم من الكوكي |
 | `lib/lines/line-payload.js` | بناء كائن مستند الخط (يشمل `channelType` اختياري) |
 | `lib/lines/phone-normalize.js` | التحقق من عدم تكرار رقم الخط في القائمة |
-| `lib/lines/reconcile-line-limits.js` | مزامنة اعتبارية لليميت عند فتح الخطوط/العمليات (احتياطي) |
+| `lib/lines/reset-limits-client.js` | إعادة ضبط الليميت اليومي/الشهري على صفحة الخطوط |
+| `lib/auth/user-locks.js` | أقفال الميزات وكلمة مرور القفل |
 | `components/ui/*` | أزرار، مدخلات، حوارات، Sheet، إلخ |
 | `components/dashboard/kpi-grid.js` | شبكة بطاقات المؤشرات في صفحة الخطوط والماكينات |
 

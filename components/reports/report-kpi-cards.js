@@ -26,7 +26,7 @@ export function ReportKpiCards({ count, totalAmount, totalCommission, avgAmount,
       {items.map((item) => {
         const Icon = item.icon;
         return (
-          <Card key={item.title}>
+          <Card key={item.title} className="border-border/60 shadow-[var(--shadow-card)]">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-base font-medium">{item.title}</CardTitle>
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">

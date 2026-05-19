@@ -8,8 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 export function ReportDailyChart({ dailySeries }) {
   if (!dailySeries.length) {
     return (
-      <Card>
-        <CardHeader>
+      <Card className="border-border/60 shadow-[var(--shadow-card)]">
+        <CardHeader className="pb-2">
           <CardTitle className="text-base font-medium">النشاط اليومي</CardTitle>
         </CardHeader>
         <CardContent>
@@ -22,8 +22,8 @@ export function ReportDailyChart({ dailySeries }) {
   const maxVal = Math.max(...dailySeries.flatMap((d) => [d.volume, d.commission]), 1);
 
   return (
-    <Card>
-      <CardHeader>
+    <Card className="border-border/60 shadow-[var(--shadow-card)]">
+      <CardHeader className="pb-2">
         <CardTitle className="text-base font-medium">النشاط اليومي (آخر {dailySeries.length} يوم)</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
