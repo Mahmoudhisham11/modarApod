@@ -45,7 +45,7 @@ export function ReportDailyChart({ dailySeries }) {
                   <span className="w-16 shrink-0 text-end text-xs tabular-nums">{day.volume.toFixed(2)}</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="w-14 shrink-0 text-xs">عمولة</span>
+                  <span className="w-14 shrink-0 text-xs">الرسوم</span>
                   <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
                     <div className="h-full rounded-full bg-emerald-500/80" style={{ width: `${comPct}%` }} />
                   </div>

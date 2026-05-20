@@ -30,7 +30,7 @@ export function ReportsListTable({ reports }) {
                     <TableHead>التاريخ</TableHead>
                     <TableHead>النوع</TableHead>
                     <TableHead>المبلغ</TableHead>
-                    <TableHead>عمولة</TableHead>
+                    <TableHead>الرسوم</TableHead>
                     <TableHead>الهاتف</TableHead>
                     <TableHead>المستلم</TableHead>
                     <TableHead>المنفّذ</TableHead>

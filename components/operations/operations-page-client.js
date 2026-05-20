@@ -473,7 +473,7 @@ export function OperationsPageClient({ shop, userEmail, userName }) {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="op-commission">العمولة</Label>
+                <Label htmlFor="op-commission">الرسوم</Label>
                 <Input
                   id="op-commission"
                   dir="ltr"
@@ -593,12 +593,12 @@ export function OperationsPageClient({ shop, userEmail, userName }) {
                 {sourceId && !selectedSourceIsSuitable ? (
                   <p className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-destructive">
                     الوسيلة المختارة حاليًا في الحقل «الوسيلة» غير ضمن الترشيحات لهذا المبلغ. اختر «اختيار» من
-                    القائمة أدناه أو غيّر المبلغ/العمولة.
+                    القائمة أدناه أو غيّر المبلغ/الرسوم.
                   </p>
                 ) : null}
                 <p className="text-xs text-muted-foreground">
                   {sourceKind === SOURCE_KIND.MACHINE
-                    ? "الترتيب حسب الرصيد فقط (بعد خصم المبلغ والعمولة عند السحب/التحويل، أو رصيد أعلى بعد الإيداع)."
+                    ? "الترتيب حسب الرصيد فقط (بعد خصم المبلغ والرسوم عند السحب/التحويل، أو رصيد أعلى بعد الإيداع)."
                     : "الترتيب حسب أضيق هامش بين رصيد الخط ومتبقي الليميت اليومي/الشهري على المستند."}
                 </p>
                 <ol className="list-decimal space-y-3 pe-5 marker:text-muted-foreground">

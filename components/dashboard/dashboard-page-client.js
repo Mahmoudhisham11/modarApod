@@ -316,7 +316,7 @@ export function DashboardPageClient({ shop, branchLabel, userEmail }) {
                 <TableHead>النوع</TableHead>
                 <TableHead>الوسيلة</TableHead>
                 <TableHead>المبلغ</TableHead>
-                <TableHead>عمولة</TableHead>
+                <TableHead>الرسوم</TableHead>
                 <TableHead className="min-w-[5.5rem] whitespace-nowrap">إجراء</TableHead>
               </TableRow>
             </TableHeader>

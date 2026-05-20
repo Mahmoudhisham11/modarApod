@@ -27,5 +27,9 @@ service cloud.firestore {
     match /machines/{id} {
       allow read, update: if true;
     }
+
+    match /shops/{shopId} {
+      allow read, write: if true;
+    }
   }
 }

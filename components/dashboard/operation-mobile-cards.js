@@ -81,7 +81,7 @@ export function OperationMobileCards({ operations, hideMoney = false, onPrint, o
                     {hideMoney ? "••••" : valStr}
                   </span>
                   <span>
-                    <span className="text-muted-foreground">عمولة: </span>
+                    <span className="text-muted-foreground">الرسوم: </span>
                     {hideMoney ? "••••" : comStr}
                   </span>
                 </div>

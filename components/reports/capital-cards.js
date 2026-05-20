@@ -1,28 +1,26 @@
 "use client";
 
-import { BarChart3, CircleDollarSign, ListOrdered, Wallet } from "lucide-react";
+import { Building2, Wallet, PiggyBank } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 /**
  * @param {{
- *   count: number;
- *   totalAmount: number;
- *   totalCommission: number;
- *   avgAmount: number;
+ *   cash: number;
+ *   sourcesTotal: number;
+ *   capital: number;
  *   loading?: boolean;
  * }} props
  */
-export function ReportKpiCards({ count, totalAmount, totalCommission, avgAmount, loading }) {
+export function CapitalCards({ cash, sourcesTotal, capital, loading }) {
   const items = [
-    { title: "عدد التقارير", value: String(count), icon: ListOrdered },
-    { title: "إجمالي المبالغ", value: totalAmount.toFixed(2), icon: Wallet },
-    { title: "إجمالي الرسوم", value: totalCommission.toFixed(2), icon: CircleDollarSign },
-    { title: "متوسط المبلغ", value: avgAmount.toFixed(2), icon: BarChart3 },
+    { title: "رأس المال", value: capital.toFixed(2), icon: Building2 },
+    { title: "النقدي", value: cash.toFixed(2), icon: Wallet },
+    { title: "إجمالي رصيد الوسائل", value: sourcesTotal.toFixed(2), icon: PiggyBank },
   ];
 
   return (
-    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="grid gap-3 sm:grid-cols-3">
       {items.map((item) => {
         const Icon = item.icon;
         return (

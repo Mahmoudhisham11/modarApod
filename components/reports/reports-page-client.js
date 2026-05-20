@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useFeatureLock } from "@/hooks/use-feature-lock";
-import { FileDown, FileSpreadsheet, Printer, RefreshCw } from "lucide-react";
+import { DollarSign, FileDown, FileSpreadsheet, Printer, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,10 @@ import { downloadReportExcel } from "@/lib/reports/export-report-excel";
 import { exportReportPdfViaPrint } from "@/lib/reports/export-report-pdf";
 import { printReportSummary } from "@/lib/reports/print-report-summary";
 
+import { fetchShopCapitalData } from "@/lib/shops/cash-service";
+
+import { CapitalCards } from "./capital-cards";
+import { CashEditDialog } from "./cash-edit-dialog";
 import { ReportBreakdownTable } from "./report-breakdown-table";
 import { ReportDailyChart } from "./report-daily-chart";
 import { ReportKpiCards } from "./report-kpi-cards";
@@ -34,6 +38,32 @@ export function ReportsPageClient({ shop, branchLabel, userEmail }) {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [exportBusy, setExportBusy] = useState(/** @type {"excel" | null} */ (null));
+
+  const [capitalData, setCapitalData] = useState({ cash: 0, sourcesTotal: 0, capital: 0 });
+  const [capitalLoading, setCapitalLoading] = useState(true);
+
+  const loadCapital = useCallback(async () => {
+    const s = shop.trim();
+    if (!s) {
+      setCapitalData({ cash: 0, sourcesTotal: 0, capital: 0 });
+      setCapitalLoading(false);
+      return;
+    }
+    setCapitalLoading(true);
+    try {
+      const data = await fetchShopCapitalData(s);
+      setCapitalData(data);
+    } catch {
+      setCapitalData({ cash: 0, sourcesTotal: 0, capital: 0 });
+    } finally {
+      setCapitalLoading(false);
+    }
+  }, [shop]);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => void loadCapital(), 0);
+    return () => window.clearTimeout(t);
+  }, [loadCapital]);
 
   const shopReports = useMemo(() => {
     const s = shop.trim();
@@ -155,6 +185,12 @@ export function ReportsPageClient({ shop, branchLabel, userEmail }) {
               <FileSpreadsheet className="h-4 w-4" aria-hidden />
               <span className="ms-2">{exportBusy === "excel" ? "جاري التصدير…" : "تصدير Excel"}</span>
             </Button>
+            <CashEditDialog shop={shop} userName={userEmail} onCashChanged={loadCapital}>
+             <Button type="button" variant="outline" size="sm" className="shrink-0">
+              <DollarSign className="h-4 w-4" aria-hidden />
+              <span className="ms-2">تعديل النقدي</span>
+             </Button>
+            </CashEditDialog>
             <Button
               type="button"
               size="sm"
@@ -164,6 +200,7 @@ export function ReportsPageClient({ shop, branchLabel, userEmail }) {
               <Printer className="h-4 w-4" aria-hidden />
               <span className="ms-2">طباعة التقرير</span>
             </Button>
+           
           </div>
         </CardHeader>
         <CardContent>
@@ -177,6 +214,18 @@ export function ReportsPageClient({ shop, branchLabel, userEmail }) {
           />
         </CardContent>
       </Card>
+
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex-1">
+          <CapitalCards
+            cash={capitalData.cash}
+            sourcesTotal={capitalData.sourcesTotal}
+            capital={capitalData.capital}
+            loading={capitalLoading}
+          />
+        </div>
+
+      </div>
 
       {error ? (
         <Card>
