@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import { fetchShopLimitAlerts } from "@/lib/lines/limit-alerts";
+import { fetchShopActivationAlerts, fetchShopLimitAlerts } from "@/lib/lines/limit-alerts";
 
 /**
  * @param {string} shop
@@ -10,22 +10,29 @@ import { fetchShopLimitAlerts } from "@/lib/lines/limit-alerts";
  */
 export function useLimitAlerts(shop, options = {}) {
   const { enabled = true, refreshMs = 60_000 } = options;
-  const [alerts, setAlerts] = useState(/** @type {Awaited<ReturnType<typeof fetchShopLimitAlerts>>} */ ([]));
+  const [limitAlerts, setLimitAlerts] = useState(/** @type {Awaited<ReturnType<typeof fetchShopLimitAlerts>>} */ ([]));
+  const [activationAlerts, setActivationAlerts] = useState(/** @type {Awaited<ReturnType<typeof fetchShopActivationAlerts>>} */ ([]));
   const [loading, setLoading] = useState(false);
 
   const reload = useCallback(async () => {
     const s = shop.trim();
     if (!s) {
-      setAlerts([]);
+      setLimitAlerts([]);
+      setActivationAlerts([]);
       return;
     }
     setLoading(true);
     try {
-      const data = await fetchShopLimitAlerts(s);
-      setAlerts(data);
+      const [limits, activations] = await Promise.all([
+        fetchShopLimitAlerts(s),
+        fetchShopActivationAlerts(s),
+      ]);
+      setLimitAlerts(limits);
+      setActivationAlerts(activations);
     } catch (err) {
       console.error("useLimitAlerts", err);
-      setAlerts([]);
+      setLimitAlerts([]);
+      setActivationAlerts([]);
     } finally {
       setLoading(false);
     }
@@ -41,11 +48,20 @@ export function useLimitAlerts(shop, options = {}) {
     const run = async () => {
       setLoading(true);
       try {
-        const data = await fetchShopLimitAlerts(shop.trim());
-        if (!cancelled) setAlerts(data);
+        const [limits, activations] = await Promise.all([
+          fetchShopLimitAlerts(shop.trim()),
+          fetchShopActivationAlerts(shop.trim()),
+        ]);
+        if (!cancelled) {
+          setLimitAlerts(limits);
+          setActivationAlerts(activations);
+        }
       } catch (err) {
         console.error("useLimitAlerts", err);
-        if (!cancelled) setAlerts([]);
+        if (!cancelled) {
+          setLimitAlerts([]);
+          setActivationAlerts([]);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -64,7 +80,14 @@ export function useLimitAlerts(shop, options = {}) {
     };
   }, [enabled, shop, refreshMs]);
 
-  const visibleAlerts = enabled && shop.trim() ? alerts : [];
+  const visibleLimits = enabled && shop.trim() ? limitAlerts : [];
+  const visibleActivations = enabled && shop.trim() ? activationAlerts : [];
 
-  return { alerts: visibleAlerts, loading, reload, count: visibleAlerts.length };
+  return {
+    alerts: visibleLimits,
+    activationAlerts: visibleActivations,
+    loading,
+    reload,
+    count: visibleLimits.length + visibleActivations.length,
+  };
 }

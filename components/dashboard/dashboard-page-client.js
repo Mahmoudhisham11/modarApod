@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CircleDollarSign, ListOrdered, PieChart, Printer, Trash2, Wallet } from "lucide-react";
+import { Archive, CircleDollarSign, ListOrdered, MessageCircle, Phone, PieChart, Plus, Printer, Trash2, Wallet } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { CapitalCards } from "@/components/reports/capital-cards";
+import { ExecuteOperationForm } from "@/components/operations/execute-operation-form";
 import { aggregateWithdrawDepositDayMonth } from "@/lib/dashboard/operation-aggregates";
 import { printOperationInvoice } from "@/lib/dashboard/print-operation-invoice";
 import {
@@ -32,8 +34,9 @@ import {
   SOURCE_KIND,
   SOURCE_KIND_LABEL,
 } from "@/lib/operations/constants";
+import { fetchShopCapitalData } from "@/lib/shops/cash-service";
 import { requireLockPassword, useUserLocks } from "@/hooks/use-feature-lock";
-import { deleteOperationWithReversal } from "@/lib/operations/operations-service";
+import { closeDayOperations, deleteOperationWithReversal } from "@/lib/operations/operations-service";
 
 import { OperationMobileCards } from "./operation-mobile-cards";
 import { useShopOperations } from "./use-shop-operations";
@@ -113,7 +116,7 @@ function maskAmount(value, hidden) {
 /**
  * @param {{ shop: string; branchLabel: string; userEmail: string }} props
  */
-export function DashboardPageClient({ shop, branchLabel, userEmail }) {
+export function DashboardPageClient({ shop, branchLabel, userEmail, userName = "" }) {
   const userLocks = useUserLocks(userEmail);
   const hideMoney = Boolean(userLocks?.lockMoney);
   const { ops, loading, error, reload } = useShopOperations(shop);
@@ -123,6 +126,11 @@ export function DashboardPageClient({ shop, branchLabel, userEmail }) {
   const [sourceTypeFilter, setSourceTypeFilter] = useState(FILTER_ALL);
   const [deleteTarget, setDeleteTarget] = useState(/** @type {{ id: string; label: string } | null} */ (null));
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const [showNewOperation, setShowNewOperation] = useState(false);
+  const [capitalData, setCapitalData] = useState({ cash: 0, sourcesTotal: 0, capital: 0 });
+  const [capitalLoading, setCapitalLoading] = useState(true);
+  const [closeDayBusy, setCloseDayBusy] = useState(false);
+  const [showCloseDayConfirm, setShowCloseDayConfirm] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(searchInput.trim().toLowerCase()), 280);
@@ -178,6 +186,43 @@ export function DashboardPageClient({ shop, branchLabel, userEmail }) {
       setDeleteBusy(false);
     }
   }, [deleteTarget, shop, reload]);
+
+  const loadCapital = useCallback(async () => {
+    const s = shop.trim();
+    if (!s) {
+      setCapitalData({ cash: 0, sourcesTotal: 0, capital: 0 });
+      setCapitalLoading(false);
+      return;
+    }
+    setCapitalLoading(true);
+    try {
+      const data = await fetchShopCapitalData(s);
+      setCapitalData(data);
+    } catch {
+      setCapitalData({ cash: 0, sourcesTotal: 0, capital: 0 });
+    } finally {
+      setCapitalLoading(false);
+    }
+  }, [shop]);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => void loadCapital(), 0);
+    return () => window.clearTimeout(t);
+  }, [loadCapital]);
+
+  const handleCloseDay = useCallback(async () => {
+    setCloseDayBusy(true);
+    try {
+      const result = await closeDayOperations(shop.trim(), userEmail);
+      toast.success(`تم تقفيل اليوم. نقل ${result.moved} عملية إلى التقارير.`);
+      setShowCloseDayConfirm(false);
+      await reload();
+    } catch (e) {
+      toastFirestoreError(e, "تقفيل اليوم");
+    } finally {
+      setCloseDayBusy(false);
+    }
+  }, [shop, userEmail, reload]);
 
   const handlePrintInvoice = useCallback(
     (op) => {
@@ -242,11 +287,26 @@ export function DashboardPageClient({ shop, branchLabel, userEmail }) {
         </Card>
       </div>
 
+      <CapitalCards
+        cash={capitalData.cash}
+        sourcesTotal={capitalData.sourcesTotal}
+        capital={capitalData.capital}
+        loading={capitalLoading}
+      />
+
       <Card className="border-border/60 shadow-[var(--shadow-card)]">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-base font-medium">بحث وفلترة</CardTitle>
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-            <PieChart className="h-5 w-5" aria-hidden />
+          <div className="flex items-center gap-2">
+            <Button type="button" size="sm" variant={filteredOps.length > 0 ? "default" : "outline"} disabled={filteredOps.length === 0} onClick={() => setShowCloseDayConfirm(true)}>
+              <Archive className="ms-1 h-4 w-4" /> تقفيل اليوم
+            </Button>
+            <Button type="button" size="sm" onClick={() => setShowNewOperation(true)}>
+              <Plus className="ms-1 h-4 w-4" /> عملية جديدة
+            </Button>
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+              <PieChart className="h-5 w-5" aria-hidden />
+            </div>
           </div>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -307,6 +367,7 @@ export function DashboardPageClient({ shop, branchLabel, userEmail }) {
             hideMoney={hideMoney}
             onPrint={handlePrintInvoice}
             onDelete={requestDelete}
+            branchLabel={branchLabel}
           />
           <div className="hidden md:block">
           <Table>
@@ -336,6 +397,23 @@ export function DashboardPageClient({ shop, branchLabel, userEmail }) {
                 const valStr = Number.isFinite(val) ? val.toFixed(2) : "0";
                 const com = Number(op.commation ?? op.commission ?? 0);
                 const comStr = Number.isFinite(com) ? com.toFixed(2) : "0";
+                const receiverRaw = asString(op.receiver);
+                const hasReceiver = Boolean(receiverRaw);
+                const waUrl = hasReceiver
+                  ? `https://wa.me/${receiverRaw.replace(/[^+\d]/g, "")}?text=${encodeURIComponent(
+                      [
+                        `فاتورة عملية - ${branchLabel}`,
+                        `التاريخ: ${dateLabel}`,
+                        `النوع: ${typeLabel}`,
+                        `الوسيلة: ${srcLabel}`,
+                        `المبلغ: ${valStr}`,
+                        `الرسوم: ${comStr}`,
+                        `رقم العميل: ${receiverRaw}`,
+                        "عميلنا العزيز برجاء عد النقدية قبل الخروج من المحل",
+                      ].join("\n"),
+                    )}`
+                  : "";
+                const callUrl = hasReceiver ? `tel:${receiverRaw.replace(/[^+\d]/g, "")}` : "";
                 return (
                   <TableRow key={id}>
                     <TableCell className="whitespace-nowrap">{dateLabel}</TableCell>
@@ -350,6 +428,20 @@ export function DashboardPageClient({ shop, branchLabel, userEmail }) {
                     <TableCell className="tabular-nums">{maskAmount(comStr, hideMoney)}</TableCell>
                     <TableCell>
                       <div className="flex flex-wrap items-center gap-1">
+                        {hasReceiver ? (
+                          <>
+                            <a href={waUrl} target="_blank" rel="noopener noreferrer" title="واتساب">
+                              <Button type="button" variant="outline" size="icon" className="h-8 w-8 shrink-0">
+                                <MessageCircle className="h-4 w-4 text-emerald-500" aria-hidden />
+                              </Button>
+                            </a>
+                            <a href={callUrl} title="اتصال">
+                              <Button type="button" variant="outline" size="icon" className="h-8 w-8 shrink-0">
+                                <Phone className="h-4 w-4 text-sky-500" aria-hidden />
+                              </Button>
+                            </a>
+                          </>
+                        ) : null}
                         <Button
                           type="button"
                           variant="outline"
@@ -390,6 +482,41 @@ export function DashboardPageClient({ shop, branchLabel, userEmail }) {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={showCloseDayConfirm} onOpenChange={(open) => !open && !closeDayBusy && setShowCloseDayConfirm(false)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>تقفيل اليوم</DialogTitle>
+            <DialogDescription>
+              سيتم نقل {filteredOps.length} عملية من العمليات إلى التقارير ولا يمكن التراجع عن هذا الإجراء.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" disabled={closeDayBusy} onClick={() => setShowCloseDayConfirm(false)}>
+              إلغاء
+            </Button>
+            <Button type="button" disabled={closeDayBusy} onClick={() => void handleCloseDay()}>
+              {closeDayBusy ? "جاري التقفيل…" : "تأكيد التقفيل"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showNewOperation} onOpenChange={(open) => !open && setShowNewOperation(false)}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>عملية جديدة</DialogTitle>
+            <DialogDescription>نفس نموذج التنفيذ في صفحة العمليات.</DialogDescription>
+          </DialogHeader>
+          <ExecuteOperationForm
+            shop={shop}
+            userEmail={userEmail}
+            userName={userName}
+            showTitle={false}
+            onSuccess={() => { setShowNewOperation(false); reload(); }}
+          />
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && !deleteBusy && setDeleteTarget(null)}>
         <DialogContent>

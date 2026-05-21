@@ -1,17 +1,22 @@
 "use client";
 
-import { asString, getOpAmount, getOpCommission, getOpType, opToDate } from "@/lib/dashboard/operation-display";
-import { OPERATION_TYPE_LABEL } from "@/lib/operations/constants";
+import { Trash2 } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { asString, getOpAmount, getOpCommission, getOpType, opToDate } from "@/lib/dashboard/operation-display";
+import { OPERATION_TYPE_LABEL } from "@/lib/operations/constants";
 
 import { ReportsListCards } from "./reports-list-cards";
 
 /**
- * @param {{ reports: Array<Record<string, unknown> & { id?: string }> }} props
+ * @param {{
+ *   reports: Array<Record<string, unknown> & { id?: string }>;
+ *   onDelete: (id: string) => void;
+ * }} props
  */
-export function ReportsListTable({ reports }) {
+export function ReportsListTable({ reports, onDelete }) {
   return (
     <Card className="border-border/60 shadow-[var(--shadow-card)]">
       <CardHeader className="pb-2">
@@ -22,7 +27,7 @@ export function ReportsListTable({ reports }) {
           <p className="text-sm text-muted-foreground">لا توجد تقارير.</p>
         ) : (
           <>
-            <ReportsListCards reports={reports} />
+            <ReportsListCards reports={reports} onDelete={onDelete} />
             <div className="hidden md:block">
               <Table>
                 <TableHeader>
@@ -35,6 +40,7 @@ export function ReportsListTable({ reports }) {
                     <TableHead>المستلم</TableHead>
                     <TableHead>المنفّذ</TableHead>
                     <TableHead>ملاحظات</TableHead>
+                    <TableHead className="w-12" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -75,6 +81,19 @@ export function ReportsListTable({ reports }) {
                         <TableCell>{asString(row.receiver) || "—"}</TableCell>
                         <TableCell>{asString(row.userName) || "—"}</TableCell>
                         <TableCell className="max-w-[200px] truncate">{asString(row.notes) || "—"}</TableCell>
+                        <TableCell>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 shrink-0 text-destructive hover:bg-destructive/10"
+                            title="حذف التقرير"
+                            aria-label="حذف"
+                            onClick={() => onDelete(id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
                       </TableRow>
                     );
                   })}

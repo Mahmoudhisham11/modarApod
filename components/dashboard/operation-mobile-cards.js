@@ -1,6 +1,6 @@
 "use client";
 
-import { Printer, Trash2 } from "lucide-react";
+import { MessageCircle, Phone, Printer, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { OPERATION_TYPE_LABEL, SOURCE_KIND_LABEL } from "@/lib/operations/constants";
@@ -23,14 +23,71 @@ function opCreatedAtToDate(ts) {
 }
 
 /**
+ * @param {Record<string, unknown> & { id?: string }} op
+ * @param {{ branchLabel?: string }} [options]
+ */
+function receiverWhatsAppUrl(op, options) {
+  const raw = asString(op.receiver);
+  if (!raw) return "";
+  const cleaned = raw.replace(/[^+\d]/g, "");
+  const text = buildWhatsAppText(op, options);
+  return `https://wa.me/${cleaned}?text=${encodeURIComponent(text)}`;
+}
+
+/**
+ * @param {Record<string, unknown> & { id?: string }} op
+ */
+function receiverCallUrl(op) {
+  const raw = asString(op.receiver);
+  if (!raw) return "";
+  const cleaned = raw.replace(/[^+\d]/g, "");
+  return `tel:${cleaned}`;
+}
+
+/**
+ * @param {Record<string, unknown> & { id?: string }} op
+ * @param {{ branchLabel?: string }} [options]
+ */
+function buildWhatsAppText(op, options) {
+  const branchLabel = (options?.branchLabel ?? "").trim() || "الفرع";
+  const created = opCreatedAtToDate(op.createdAt);
+  const dateStr =
+    created.getTime() === 0
+      ? "—"
+      : created.toLocaleString("ar-EG", { dateStyle: "short", timeStyle: "short" });
+  const typeKey = asString(op.type ?? op.operationType);
+  const typeLabel = OPERATION_TYPE_LABEL[/** @type {keyof typeof OPERATION_TYPE_LABEL} */ (typeKey)] ?? typeKey;
+  const src = op.source && typeof op.source === "object" ? /** @type {Record<string, unknown>} */ (op.source) : {};
+  const sourceName = asString(src.name) || asString(op.sourceId);
+  const val = Number(op.operationVal ?? op.amount ?? 0);
+  const valStr = Number.isFinite(val) ? val.toFixed(2) : "0";
+  const com = Number(op.commation ?? op.commission ?? 0);
+  const comStr = Number.isFinite(com) ? com.toFixed(2) : "0";
+  const receiver = asString(op.receiver);
+
+  const lines = [
+    `فاتورة عملية - ${branchLabel}`,
+    `التاريخ: ${dateStr}`,
+    `النوع: ${typeLabel}`,
+    `الوسيلة: ${sourceName}`,
+    `المبلغ: ${valStr}`,
+    `الرسوم: ${comStr}`,
+  ];
+  if (receiver) lines.push(`رقم العميل: ${receiver}`);
+  lines.push("عميلنا العزيز برجاء عد النقدية قبل الخروج من المحل");
+  return lines.join("\n");
+}
+
+/**
  * @param {{
  *   operations: Array<Record<string, unknown> & { id?: string }>;
  *   hideMoney?: boolean;
  *   onPrint: (op: Record<string, unknown>) => void;
  *   onDelete: (payload: { id: string; label: string }) => void;
+ *   branchLabel?: string;
  * }} props
  */
-export function OperationMobileCards({ operations, hideMoney = false, onPrint, onDelete }) {
+export function OperationMobileCards({ operations, hideMoney = false, onPrint, onDelete, branchLabel }) {
   if (operations.length === 0) {
     return <p className="text-center text-sm text-muted-foreground">لا توجد عمليات مطابقة.</p>;
   }
@@ -55,6 +112,9 @@ export function OperationMobileCards({ operations, hideMoney = false, onPrint, o
         const valStr = Number.isFinite(val) ? val.toFixed(2) : "0";
         const com = Number(op.commation ?? op.commission ?? 0);
         const comStr = Number.isFinite(com) ? com.toFixed(2) : "0";
+        const hasReceiver = Boolean(asString(op.receiver));
+        const waUrl = receiverWhatsAppUrl(op, { branchLabel });
+        const callUrl = receiverCallUrl(op);
 
         return (
           <article
@@ -87,6 +147,20 @@ export function OperationMobileCards({ operations, hideMoney = false, onPrint, o
                 </div>
               </div>
               <div className="flex shrink-0 flex-col gap-1">
+                {hasReceiver ? (
+                  <>
+                    <a href={waUrl} target="_blank" rel="noopener noreferrer" title="واتساب">
+                      <Button type="button" variant="outline" size="icon" className="h-8 w-8">
+                        <MessageCircle className="h-4 w-4 text-emerald-500" />
+                      </Button>
+                    </a>
+                    <a href={callUrl} title="اتصال">
+                      <Button type="button" variant="outline" size="icon" className="h-8 w-8">
+                        <Phone className="h-4 w-4 text-sky-500" />
+                      </Button>
+                    </a>
+                  </>
+                ) : null}
                 <Button
                   type="button"
                   variant="outline"

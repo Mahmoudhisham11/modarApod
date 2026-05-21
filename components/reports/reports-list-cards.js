@@ -1,14 +1,20 @@
 "use client";
 
+import { Trash2 } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
 import { asString, getOpAmount, getOpCommission, getOpType, opToDate } from "@/lib/dashboard/operation-display";
 import { OPERATION_TYPE_LABEL } from "@/lib/operations/constants";
 import { getOperationTypeTheme } from "@/lib/ui/operation-type-theme";
 import { cn } from "@/lib/utils";
 
 /**
- * @param {{ reports: Array<Record<string, unknown> & { id?: string }> }} props
+ * @param {{
+ *   reports: Array<Record<string, unknown> & { id?: string }>;
+ *   onDelete: (id: string) => void;
+ * }} props
  */
-export function ReportsListCards({ reports }) {
+export function ReportsListCards({ reports, onDelete }) {
   if (reports.length === 0) {
     return <p className="text-sm text-muted-foreground">لا توجد تقارير.</p>;
   }
@@ -37,22 +43,35 @@ export function ReportsListCards({ reports }) {
             )}
           >
             <span className={cn("absolute inset-y-0 start-0 w-1", theme.accent)} aria-hidden />
-            <div className="space-y-2 ps-2">
-              <span className={cn("inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium", theme.badge)}>
-                {typeLabel}
-              </span>
-              <p className="text-xs text-muted-foreground">{dateLabel}</p>
-              <p className="font-mono text-sm">{asString(row.phone) || "—"}</p>
-              <div className="flex flex-wrap gap-3 text-sm tabular-nums">
-                <span>مبلغ: {amt.toFixed(2)}</span>
-                <span>الرسوم: {com.toFixed(2)}</span>
+            <div className="flex items-start justify-between gap-3 ps-2">
+              <div className="min-w-0 flex-1 space-y-2">
+                <span className={cn("inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium", theme.badge)}>
+                  {typeLabel}
+                </span>
+                <p className="text-xs text-muted-foreground">{dateLabel}</p>
+                <p className="font-mono text-sm">{asString(row.phone) || "—"}</p>
+                <div className="flex flex-wrap gap-3 text-sm tabular-nums">
+                  <span>مبلغ: {amt.toFixed(2)}</span>
+                  <span>الرسوم: {com.toFixed(2)}</span>
+                </div>
+                {asString(row.receiver) ? (
+                  <p className="text-xs text-muted-foreground">مستلم: {asString(row.receiver)}</p>
+                ) : null}
+                {asString(row.notes) ? (
+                  <p className="text-xs text-muted-foreground line-clamp-2">{asString(row.notes)}</p>
+                ) : null}
               </div>
-              {asString(row.receiver) ? (
-                <p className="text-xs text-muted-foreground">مستلم: {asString(row.receiver)}</p>
-              ) : null}
-              {asString(row.notes) ? (
-                <p className="text-xs text-muted-foreground line-clamp-2">{asString(row.notes)}</p>
-              ) : null}
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 shrink-0 text-destructive hover:bg-destructive/10"
+                title="حذف التقرير"
+                aria-label="حذف"
+                onClick={() => onDelete(id)}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
             </div>
           </article>
         );

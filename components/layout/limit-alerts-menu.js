@@ -20,7 +20,7 @@ import { cn } from "@/lib/utils";
  */
 export function LimitAlertsMenu({ shop }) {
   const [open, setOpen] = useState(false);
-  const { alerts, loading, reload, count } = useLimitAlerts(shop, { enabled: true });
+  const { alerts, activationAlerts, loading, reload, count } = useLimitAlerts(shop, { enabled: true });
 
   return (
     <DropdownMenu
@@ -36,7 +36,7 @@ export function LimitAlertsMenu({ shop }) {
           variant="ghost"
           size="icon"
           className="relative h-9 w-9 shrink-0"
-          aria-label="تنبيهات الليميت"
+          aria-label="التنبيهات"
         >
           <Bell className="h-4 w-4 text-muted-foreground" />
           {count > 0 ? (
@@ -48,36 +48,60 @@ export function LimitAlertsMenu({ shop }) {
           )}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-80">
-        <DropdownMenuLabel>خطوط وصلت للحد</DropdownMenuLabel>
-        <DropdownMenuSeparator />
+      <DropdownMenuContent align="end" className="w-80 max-h-[70vh] overflow-y-auto">
         {loading ? (
           <DropdownMenuItem disabled>جاري التحميل…</DropdownMenuItem>
-        ) : alerts.length === 0 ? (
-          <DropdownMenuItem disabled>لا توجد خطوط وصلت للحد</DropdownMenuItem>
+        ) : count === 0 ? (
+          <DropdownMenuItem disabled>لا توجد تنبيهات</DropdownMenuItem>
         ) : (
-          alerts.map((line) => (
-            <div key={`${line.collectionName}-${line.id}`} className="px-2 py-2">
-              <p className="text-sm font-medium text-foreground">
-                {line.phone}
-                {line.name ? <span className="text-muted-foreground"> — {line.name}</span> : null}
-              </p>
-              <ul className="mt-1.5 space-y-1">
-                {line.alerts.map((a) => (
-                  <li
-                    key={a.label}
-                    className={cn(
-                      "text-xs",
-                      a.status === "exhausted" ? "text-destructive" : "text-warning",
-                    )}
-                  >
-                    {a.label}: {a.remainder.toLocaleString("ar-EG")} / {a.cap.toLocaleString("ar-EG")}
-                    {a.status === "exhausted" ? " (مستنفد)" : " (منخفض)"}
-                  </li>
+          <>
+            {activationAlerts.length > 0 ? (
+              <>
+                <DropdownMenuLabel>خطوط تخطت 3 شهور من التفعيل</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {activationAlerts.map((line) => (
+                  <div key={`act-${line.collectionName}-${line.id}`} className="px-2 py-2">
+                    <p className="text-sm font-medium text-foreground">
+                      {line.phone}
+                      {line.name ? <span className="text-muted-foreground"> — {line.name}</span> : null}
+                    </p>
+                    <p className="text-xs text-warning">
+                      تم التفعيل: {line.activationDate} — انتهت الـ 3 أشهر في {line.expiredSince}
+                    </p>
+                  </div>
                 ))}
-              </ul>
-            </div>
-          ))
+              </>
+            ) : null}
+
+            {alerts.length > 0 ? (
+              <>
+                <DropdownMenuLabel>خطوط وصلت للحد</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {alerts.map((line) => (
+                  <div key={`lim-${line.collectionName}-${line.id}`} className="px-2 py-2">
+                    <p className="text-sm font-medium text-foreground">
+                      {line.phone}
+                      {line.name ? <span className="text-muted-foreground"> — {line.name}</span> : null}
+                    </p>
+                    <ul className="mt-1.5 space-y-1">
+                      {line.alerts.map((a) => (
+                        <li
+                          key={a.label}
+                          className={cn(
+                            "text-xs",
+                            a.status === "exhausted" ? "text-destructive" : "text-warning",
+                          )}
+                        >
+                          {a.label}: {a.remainder.toLocaleString("ar-EG")} / {a.cap.toLocaleString("ar-EG")}
+                          {a.status === "exhausted" ? " (مستنفد)" : " (منخفض)"}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </>
+            ) : null}
+          </>
         )}
       </DropdownMenuContent>
     </DropdownMenu>

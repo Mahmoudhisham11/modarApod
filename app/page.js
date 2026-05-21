@@ -19,7 +19,7 @@ export default async function HomePage() {
   return (
     <DashboardShell user={user}>
       <PageHeader title="لوحة التحكم" />
-      <DashboardPageClient shop={shop} branchLabel={branchLabel} userEmail={user.email} />
+      <DashboardPageClient shop={shop} branchLabel={branchLabel} userEmail={user.email} userName={user.name} />
     </DashboardShell>
   );
 }

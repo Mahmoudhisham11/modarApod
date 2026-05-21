@@ -1,25 +1,32 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useFeatureLock } from "@/hooks/use-feature-lock";
-import { DollarSign, FileDown, FileSpreadsheet, Printer, RefreshCw } from "lucide-react";
+import { DollarSign, FileDown, FileSpreadsheet, Printer, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { asString } from "@/lib/dashboard/operation-display";
 import {
   buildReportSummary,
   filterOperationsByPeriod,
   periodLabelAr,
 } from "@/lib/reports/report-aggregates";
+import { deleteReportById } from "@/lib/reports/reports-service";
 import { downloadReportExcel } from "@/lib/reports/export-report-excel";
 import { exportReportPdfViaPrint } from "@/lib/reports/export-report-pdf";
 import { printReportSummary } from "@/lib/reports/print-report-summary";
-
 import { fetchShopCapitalData } from "@/lib/shops/cash-service";
 
-import { CapitalCards } from "./capital-cards";
 import { CashEditDialog } from "./cash-edit-dialog";
 import { ReportBreakdownTable } from "./report-breakdown-table";
 import { ReportDailyChart } from "./report-daily-chart";
@@ -38,9 +45,10 @@ export function ReportsPageClient({ shop, branchLabel, userEmail }) {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [exportBusy, setExportBusy] = useState(/** @type {"excel" | null} */ (null));
-
   const [capitalData, setCapitalData] = useState({ cash: 0, sourcesTotal: 0, capital: 0 });
   const [capitalLoading, setCapitalLoading] = useState(true);
+  const [deleteTarget, setDeleteTarget] = useState(/** @type {string | null} */ (null));
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   const loadCapital = useCallback(async () => {
     const s = shop.trim();
@@ -59,11 +67,6 @@ export function ReportsPageClient({ shop, branchLabel, userEmail }) {
       setCapitalLoading(false);
     }
   }, [shop]);
-
-  useEffect(() => {
-    const t = window.setTimeout(() => void loadCapital(), 0);
-    return () => window.clearTimeout(t);
-  }, [loadCapital]);
 
   const shopReports = useMemo(() => {
     const s = shop.trim();
@@ -131,6 +134,21 @@ export function ReportsPageClient({ shop, branchLabel, userEmail }) {
     }
   };
 
+  const handleDelete = useCallback(async () => {
+    if (!deleteTarget) return;
+    setDeleteBusy(true);
+    try {
+      await deleteReportById(deleteTarget);
+      toast.success("تم حذف التقرير");
+      setDeleteTarget(null);
+      await reload();
+    } catch {
+      toast.error("تعذّر حذف التقرير. أعد المحاولة.");
+    } finally {
+      setDeleteBusy(false);
+    }
+  }, [deleteTarget, reload]);
+
   if (!shop.trim()) {
     return (
       <Card>
@@ -186,10 +204,10 @@ export function ReportsPageClient({ shop, branchLabel, userEmail }) {
               <span className="ms-2">{exportBusy === "excel" ? "جاري التصدير…" : "تصدير Excel"}</span>
             </Button>
             <CashEditDialog shop={shop} userName={userEmail} onCashChanged={loadCapital}>
-             <Button type="button" variant="outline" size="sm" className="shrink-0">
-              <DollarSign className="h-4 w-4" aria-hidden />
-              <span className="ms-2">تعديل النقدي</span>
-             </Button>
+              <Button type="button" variant="outline" size="sm" className="shrink-0">
+                <DollarSign className="h-4 w-4" aria-hidden />
+                <span className="ms-2">تعديل النقدي</span>
+              </Button>
             </CashEditDialog>
             <Button
               type="button"
@@ -200,7 +218,6 @@ export function ReportsPageClient({ shop, branchLabel, userEmail }) {
               <Printer className="h-4 w-4" aria-hidden />
               <span className="ms-2">طباعة التقرير</span>
             </Button>
-           
           </div>
         </CardHeader>
         <CardContent>
@@ -214,18 +231,6 @@ export function ReportsPageClient({ shop, branchLabel, userEmail }) {
           />
         </CardContent>
       </Card>
-
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex-1">
-          <CapitalCards
-            cash={capitalData.cash}
-            sourcesTotal={capitalData.sourcesTotal}
-            capital={capitalData.capital}
-            loading={capitalLoading}
-          />
-        </div>
-
-      </div>
 
       {error ? (
         <Card>
@@ -272,9 +277,27 @@ export function ReportsPageClient({ shop, branchLabel, userEmail }) {
             nameColumn="الهاتف"
             rows={summary.topPhones.map((r) => ({ label: r.label, count: r.count, volume: r.volume }))}
           />
-          <ReportsListTable reports={periodReports} />
+          <ReportsListTable reports={periodReports} onDelete={setDeleteTarget} />
         </>
       )}
+
+      <Dialog open={deleteTarget !== null} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>حذف التقرير</DialogTitle>
+            <DialogDescription>هل أنت متأكد من حذف هذا التقرير؟ لا يمكن التراجع عن هذا الإجراء.</DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button type="button" variant="outline" disabled={deleteBusy} onClick={() => setDeleteTarget(null)}>
+              إلغاء
+            </Button>
+            <Button type="button" variant="destructive" disabled={deleteBusy} onClick={() => void handleDelete()}>
+              <Trash2 className="h-4 w-4" aria-hidden />
+              <span className="ms-2">{deleteBusy ? "جاري الحذف…" : "حذف"}</span>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
