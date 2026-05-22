@@ -181,18 +181,6 @@ export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = tr
     return () => { cancelled = true; };
   }, [userEmail, propCommissionPercentWithdraw, propCommissionPercentDeposit]);
 
-  // Auto-calculate commission when amount, operation type, or percent changes
-  useEffect(() => {
-    const pct = effectiveOperationType === OPERATION_TYPE.WITHDRAW ? commissionPercentWithdraw : commissionPercentDeposit;
-    if (pct > 0 && amount) {
-      const amt = parseFiniteNumberOrZero(amount);
-      if (amt > 0) {
-        const computed = (amt * pct) / 100;
-        setCommission(String(computed));
-      }
-    }
-  }, [amount, effectiveOperationType, commissionPercentWithdraw, commissionPercentDeposit]);
-
   // Fetch all source types on mount and cache them
   const loadAllSources = useCallback(async () => {
     const s = shop.trim();
@@ -234,6 +222,18 @@ export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = tr
   const selectedItem = useMemo(() => sources.find((x) => x.id === sourceId) ?? null, [sources, sourceId]);
   const amountNum = parseFiniteNumberOrZero(amount);
   const commissionNum = parseFiniteNumberOrZero(commission);
+
+  // Auto-calculate commission when amount, operation type, or percent changes
+  useEffect(() => {
+    const pct = effectiveOperationType === OPERATION_TYPE.WITHDRAW ? commissionPercentWithdraw : commissionPercentDeposit;
+    if (pct > 0 && amount) {
+      const amt = parseFiniteNumberOrZero(amount);
+      if (amt > 0) {
+        const computed = (amt * pct) / 100;
+        setCommission(String(computed));
+      }
+    }
+  }, [amount, effectiveOperationType, commissionPercentWithdraw, commissionPercentDeposit]);
 
   const lineLimitPreview = useMemo(() => {
     if (!shop.trim() || !selectedItem || !sourceId) return null;
