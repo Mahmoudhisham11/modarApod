@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { MessageCircle, Phone, Printer, Trash2 } from "lucide-react";
+import { Phone, Printer, Share2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { generateInvoicePdfBlob } from "@/lib/dashboard/print-operation-invoice";
 import { OPERATION_TYPE_LABEL, SOURCE_KIND_LABEL } from "@/lib/operations/constants";
 import { getOperationTypeTheme } from "@/lib/ui/operation-type-theme";
 import { cn } from "@/lib/utils";
@@ -31,16 +32,36 @@ function opCreatedAtToDate(ts) {
 async function shareInvoicePdf(op, options) {
   const id = asString(op.id);
   const receiverRaw = asString(op.receiver);
-  if (!receiverRaw) {
-    toast.error("لا يوجد رقم عميل للإرسال");
-    return;
+
+  try {
+    const blob = await generateInvoicePdfBlob(op, options);
+    if (blob) {
+      const file = new File([blob], `invoice-${id}.pdf`, { type: "application/pdf" });
+
+      if (typeof navigator.canShare === "function" && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: "فاتورة عملية" });
+        return;
+      }
+
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      toast.success("تم فتح الفاتورة PDF");
+      return;
+    }
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") return;
+    console.warn("PDF share failed, falling back to link", err);
   }
+
+  // Fallback: send invoice link via wa.me
+  if (!receiverRaw) { toast.error("لا يوجد رقم عميل للإرسال"); return; }
   const cleaned = receiverRaw.replace(/[^+\d]/g, "");
   const branch = (options?.branchLabel ?? "").trim();
   const baseUrl = window.location.origin;
   const invoiceUrl = `${baseUrl}/api/invoice/${encodeURIComponent(id)}${branch ? `?branch=${encodeURIComponent(branch)}` : ""}`;
   window.open(`https://wa.me/${cleaned}?text=${encodeURIComponent(invoiceUrl)}`, "_blank", "noopener");
-  toast.success("تم إرسال رابط الفاتورة");
+  toast.info("تم إرسال رابط الفاتورة (تعذّر إرسال PDF مباشر)");
 }
 
 /**
@@ -140,11 +161,11 @@ export function OperationMobileCards({ operations, hideMoney = false, onPrint, o
                       variant="outline"
                       size="icon"
                       className="h-8 w-8"
-                      title="إرسال PDF واتساب"
+                      title="مشاركة الفاتورة"
                       disabled={busy}
                       onClick={handleShare}
                     >
-                      <MessageCircle className={cn("h-4 w-4", busy ? "text-muted-foreground" : "text-emerald-500")} />
+                      <Share2 className={cn("h-4 w-4", busy ? "text-muted-foreground" : "text-sky-500")} />
                     </Button>
                     <a href={callUrl} title="اتصال">
                       <Button type="button" variant="outline" size="icon" className="h-8 w-8">

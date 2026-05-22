@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Archive, CircleDollarSign, ListOrdered, MessageCircle, Phone, PieChart, Plus, Printer, Trash2, Wallet } from "lucide-react";
+import { Archive, CircleDollarSign, ListOrdered, Phone, PieChart, Plus, Printer, Share2, Trash2, Wallet } from "lucide-react";
 import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
@@ -29,7 +29,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { CapitalCards } from "@/components/reports/capital-cards";
 import { ExecuteOperationForm } from "@/components/operations/execute-operation-form";
 import { aggregateWithdrawDepositDayMonth } from "@/lib/dashboard/operation-aggregates";
-import { printOperationInvoice } from "@/lib/dashboard/print-operation-invoice";
+import { generateInvoicePdfBlob, printOperationInvoice } from "@/lib/dashboard/print-operation-invoice";
 import {
   OPERATION_TYPE,
   OPERATION_TYPE_LABEL,
@@ -244,19 +244,37 @@ export function DashboardPageClient({ shop, branchLabel, userEmail, userName = "
       setPdfBusy((prev) => ({ ...prev, [id]: true }));
 
       try {
-        const receiverRaw = asString(op.receiver);
-        if (!receiverRaw) {
-          toast.error("لا يوجد رقم عميل للإرسال");
+        const blob = await generateInvoicePdfBlob(op, { branchLabel: branchLabel.trim() || shop.trim() });
+        if (blob) {
+          const file = new File([blob], `invoice-${id}.pdf`, { type: "application/pdf" });
+
+          if (typeof navigator.canShare === "function" && navigator.canShare({ files: [file] })) {
+            await navigator.share({ files: [file], title: "فاتورة عملية" });
+            return;
+          }
+
+          const url = URL.createObjectURL(blob);
+          window.open(url, "_blank");
+          setTimeout(() => URL.revokeObjectURL(url), 5000);
+          toast.success("تم فتح الفاتورة PDF");
           return;
         }
+      } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") return;
+        console.warn("PDF share failed", err);
+      }
+
+      // Fallback: send invoice link via wa.me
+      const receiverRaw = asString(op.receiver);
+      if (receiverRaw) {
         const cleaned = receiverRaw.replace(/[^+\d]/g, "");
-        const branch = (branchLabel ?? "").trim() || (shop ?? "").trim();
         const baseUrl = window.location.origin;
+        const branch = (branchLabel ?? "").trim() || (shop ?? "").trim();
         const invoiceUrl = `${baseUrl}/api/invoice/${encodeURIComponent(id)}${branch ? `?branch=${encodeURIComponent(branch)}` : ""}`;
         window.open(`https://wa.me/${cleaned}?text=${encodeURIComponent(invoiceUrl)}`, "_blank", "noopener");
-        toast.success("تم إرسال رابط الفاتورة");
-      } finally {
-        setPdfBusy((prev) => ({ ...prev, [id]: false }));
+        toast.info("تم إرسال رابط الفاتورة");
+      } else {
+        toast.error("لا يوجد رقم عميل للإرسال");
       }
     },
     [branchLabel, shop, pdfBusy],
@@ -450,11 +468,11 @@ export function DashboardPageClient({ shop, branchLabel, userEmail, userName = "
                               variant="outline"
                               size="icon"
                               className="h-8 w-8 shrink-0"
-                              title="إرسال PDF واتساب"
+                              title="مشاركة الفاتورة"
                               disabled={opBusy}
                               onClick={() => handleShareInvoicePdf(op)}
                             >
-                              <MessageCircle className={cn("h-4 w-4", opBusy ? "text-muted-foreground" : "text-emerald-500")} aria-hidden />
+                              <Share2 className={cn("h-4 w-4", opBusy ? "text-muted-foreground" : "text-sky-500")} aria-hidden />
                             </Button>
                             <a href={callUrl} title="اتصال">
                               <Button type="button" variant="outline" size="icon" className="h-8 w-8 shrink-0">
@@ -534,7 +552,8 @@ export function DashboardPageClient({ shop, branchLabel, userEmail, userName = "
             userEmail={userEmail}
             userName={userName}
             showTitle={false}
-            commissionPercent={userLocks?.commissionPercent}
+            commissionPercentWithdraw={userLocks?.commissionPercentWithdraw}
+            commissionPercentDeposit={userLocks?.commissionPercentDeposit}
             onSuccess={() => { setShowNewOperation(false); reload(); }}
           />
         </DialogContent>

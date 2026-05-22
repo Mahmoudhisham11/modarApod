@@ -63,7 +63,8 @@ export function SettingsPageClient({ userEmail, shop }) {
     cash: false,
     daily: false,
   });
-  const [commissionPercent, setCommissionPercent] = useState(0);
+  const [commissionPercentWithdraw, setCommissionPercentWithdraw] = useState(0);
+  const [commissionPercentDeposit, setCommissionPercentDeposit] = useState(0);
   const [saving, setSaving] = useState(false);
 
   const [branchUsers, setBranchUsers] = useState(/** @type {Array<{ id: string; email: string; name: string }>} */ ([]));
@@ -76,7 +77,8 @@ export function SettingsPageClient({ userEmail, shop }) {
     cash: false,
     daily: false,
   });
-  const [selectedUserCommission, setSelectedUserCommission] = useState(0);
+  const [selectedUserCommissionWithdraw, setSelectedUserCommissionWithdraw] = useState(0);
+  const [selectedUserCommissionDeposit, setSelectedUserCommissionDeposit] = useState(0);
   const [selectedUserLoading, setSelectedUserLoading] = useState(false);
   const [savingUser, setSavingUser] = useState(false);
 
@@ -99,7 +101,8 @@ export function SettingsPageClient({ userEmail, shop }) {
         cash: data.lockCash,
         daily: data.lockDaily,
       });
-      setCommissionPercent(data.commissionPercent);
+      setCommissionPercentWithdraw(data.commissionPercentWithdraw);
+      setCommissionPercentDeposit(data.commissionPercentDeposit);
       setLoading(false);
     })();
     return () => { cancelled = true; };
@@ -121,7 +124,8 @@ export function SettingsPageClient({ userEmail, shop }) {
   useEffect(() => {
     if (!selectedUserId || selectedUserId === SELECT_NONE) {
       setSelectedUserLocks({ reports: false, numbers: false, money: false, cash: false, daily: false });
-      setSelectedUserCommission(0);
+      setSelectedUserCommissionWithdraw(0);
+      setSelectedUserCommissionDeposit(0);
       return;
     }
     let cancelled = false;
@@ -141,7 +145,8 @@ export function SettingsPageClient({ userEmail, shop }) {
             cash: data.lockCash,
             daily: data.lockDaily,
           });
-          setSelectedUserCommission(data.commissionPercent);
+          setSelectedUserCommissionWithdraw(data.commissionPercentWithdraw);
+          setSelectedUserCommissionDeposit(data.commissionPercentDeposit);
         }
       } catch {
         if (!cancelled) toast.error("تعذّر تحميل صلاحيات المستخدم");
@@ -168,7 +173,8 @@ export function SettingsPageClient({ userEmail, shop }) {
         lockMoney: locks.money,
         lockCash: locks.cash,
         lockDaily: locks.daily,
-        commissionPercent,
+        commissionPercentWithdraw,
+        commissionPercentDeposit,
       });
       setHasPassword(true);
       setVerified(true);
@@ -198,7 +204,8 @@ export function SettingsPageClient({ userEmail, shop }) {
         lockMoney: locks.money,
         lockCash: locks.cash,
         lockDaily: locks.daily,
-        commissionPercent,
+        commissionPercentWithdraw,
+        commissionPercentDeposit,
       };
       if (newPassword.trim()) patch.lockPassword = newPassword.trim();
       await updateUserLocks(userDocId, patch);
@@ -218,7 +225,8 @@ export function SettingsPageClient({ userEmail, shop }) {
         lockMoney: selectedUserLocks.money,
         lockCash: selectedUserLocks.cash,
         lockDaily: selectedUserLocks.daily,
-        commissionPercent: selectedUserCommission,
+        commissionPercentWithdraw: selectedUserCommissionWithdraw,
+        commissionPercentDeposit: selectedUserCommissionDeposit,
       });
       toast.success("تم تحديث صلاحيات المستخدم");
     } catch { toast.error("تعذر الحفظ"); }
@@ -304,27 +312,51 @@ export function SettingsPageClient({ userEmail, shop }) {
                 ))}
               </div>
 
-              {/* Commission percent */}
-              <div className="flex flex-col gap-4 border-t border-border pt-6 sm:flex-row sm:items-end">
+              {/* Commission percents */}
+              <div className="grid gap-4 border-t border-border pt-6 sm:grid-cols-2">
                 <div className="max-w-xs flex-1">
                   <div className="space-y-2">
-                    <Label htmlFor="commission-percent" className="text-sm font-medium">
-                      نسبة الرسوم (%)
+                    <Label htmlFor="commission-withdraw" className="text-sm font-medium">
+                      نسبة رسوم السحب (%)
                     </Label>
                     <p className="text-xs text-muted-foreground">
-                      مثلاً 1%: عند كتابة المبلغ 1000 تتحسب الرسوم تلقائي 10. اترك 0 لو عايز تحدد الرسوم يدوي.
+                      تتحسب رسوم السحب تلقائي من النسبة دي. اترك 0 للتحكم اليدوي.
                     </p>
                     <div className="relative">
                       <Input
-                        id="commission-percent"
+                        id="commission-withdraw"
                         type="number"
                         step="0.01"
                         min="0"
                         max="100"
                         dir="ltr"
                         className="font-mono pe-8"
-                        value={commissionPercent || ""}
-                        onChange={(e) => setCommissionPercent(Number(e.target.value) || 0)}
+                        value={commissionPercentWithdraw || ""}
+                        onChange={(e) => setCommissionPercentWithdraw(Number(e.target.value) || 0)}
+                      />
+                      <Percent className="pointer-events-none absolute end-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    </div>
+                  </div>
+                </div>
+                <div className="max-w-xs flex-1">
+                  <div className="space-y-2">
+                    <Label htmlFor="commission-deposit" className="text-sm font-medium">
+                      نسبة رسوم الإيداع (%)
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      تتحسب رسوم الإيداع تلقائي من النسبة دي. اترك 0 للتحكم اليدوي.
+                    </p>
+                    <div className="relative">
+                      <Input
+                        id="commission-deposit"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="100"
+                        dir="ltr"
+                        className="font-mono pe-8"
+                        value={commissionPercentDeposit || ""}
+                        onChange={(e) => setCommissionPercentDeposit(Number(e.target.value) || 0)}
                       />
                       <Percent className="pointer-events-none absolute end-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     </div>
@@ -424,23 +456,44 @@ export function SettingsPageClient({ userEmail, shop }) {
                       ))}
                     </div>
 
-                    <div className="flex flex-col gap-4 border-t border-border pt-6 sm:flex-row sm:items-end">
+                    <div className="grid gap-4 border-t border-border pt-6 sm:grid-cols-2">
                       <div className="max-w-xs flex-1">
                         <div className="space-y-2">
-                          <Label htmlFor="user-commission-percent" className="text-sm font-medium">
-                            نسبة الرسوم (%)
+                          <Label htmlFor="user-commission-withdraw" className="text-sm font-medium">
+                            نسبة رسوم السحب (%)
                           </Label>
                           <div className="relative">
                             <Input
-                              id="user-commission-percent"
+                              id="user-commission-withdraw"
                               type="number"
                               step="0.01"
                               min="0"
                               max="100"
                               dir="ltr"
                               className="font-mono pe-8"
-                              value={selectedUserCommission || ""}
-                              onChange={(e) => setSelectedUserCommission(Number(e.target.value) || 0)}
+                              value={selectedUserCommissionWithdraw || ""}
+                              onChange={(e) => setSelectedUserCommissionWithdraw(Number(e.target.value) || 0)}
+                            />
+                            <Percent className="pointer-events-none absolute end-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                          </div>
+                        </div>
+                      </div>
+                      <div className="max-w-xs flex-1">
+                        <div className="space-y-2">
+                          <Label htmlFor="user-commission-deposit" className="text-sm font-medium">
+                            نسبة رسوم الإيداع (%)
+                          </Label>
+                          <div className="relative">
+                            <Input
+                              id="user-commission-deposit"
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              max="100"
+                              dir="ltr"
+                              className="font-mono pe-8"
+                              value={selectedUserCommissionDeposit || ""}
+                              onChange={(e) => setSelectedUserCommissionDeposit(Number(e.target.value) || 0)}
                             />
                             <Percent className="pointer-events-none absolute end-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                           </div>

@@ -23,6 +23,7 @@ import {
   OPERATION_TYPE_LABEL,
   SOURCE_KIND,
   SOURCE_KIND_LABEL,
+  isMachineDebitOperation,
   operationTypesForSourceKind,
 } from "@/lib/operations/constants";
 import {
@@ -144,10 +145,11 @@ function applyOperationToCache(kind, cache, sourceId, opType, amount, commission
  *   userName: string;
  *   showTitle?: boolean;
  *   onSuccess?: () => void | Promise<void>;
- *   commissionPercent?: number;
+ *   commissionPercentWithdraw?: number;
+ *   commissionPercentDeposit?: number;
  * }} props
  */
-export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = true, onSuccess, commissionPercent: propCommissionPercent }) {
+export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = true, onSuccess, commissionPercentWithdraw: propCommissionPercentWithdraw, commissionPercentDeposit: propCommissionPercentDeposit }) {
   const [sourceKind, setSourceKind] = useState(SOURCE_KIND.TELECOM);
   const [sourceId, setSourceId] = useState("");
   const [operationType, setOperationType] = useState(OPERATION_TYPE.WITHDRAW);
@@ -158,33 +160,38 @@ export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = tr
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [commissionPercent, setCommissionPercent] = useState(propCommissionPercent ?? 0);
+  const [commissionPercentWithdraw, setCommissionPercentWithdraw] = useState(propCommissionPercentWithdraw ?? 0);
+  const [commissionPercentDeposit, setCommissionPercentDeposit] = useState(propCommissionPercentDeposit ?? 0);
   const [allSourcesCache, setAllSourcesCache] = useState(/** @type {Record<string, Array<{ id: string; row: Record<string, unknown> }>>} */ ({}));
 
-  // Fetch commission percent from user doc if not provided as prop
+  // Fetch commission percents from user doc if not provided as props
   useEffect(() => {
-    if (propCommissionPercent !== undefined) return;
+    if (propCommissionPercentWithdraw !== undefined && propCommissionPercentDeposit !== undefined) return;
     let cancelled = false;
     (async () => {
       if (!userEmail) return;
       const found = await fetchUserDocByEmail(userEmail);
       if (cancelled || !found) return;
       const data = userLocksFromData(found.data);
-      if (!cancelled) setCommissionPercent(data.commissionPercent);
+      if (!cancelled) {
+        if (propCommissionPercentWithdraw === undefined) setCommissionPercentWithdraw(data.commissionPercentWithdraw);
+        if (propCommissionPercentDeposit === undefined) setCommissionPercentDeposit(data.commissionPercentDeposit);
+      }
     })();
     return () => { cancelled = true; };
-  }, [userEmail, propCommissionPercent]);
+  }, [userEmail, propCommissionPercentWithdraw, propCommissionPercentDeposit]);
 
-  // Auto-calculate commission when amount or percent changes
+  // Auto-calculate commission when amount, operation type, or percent changes
   useEffect(() => {
-    if (commissionPercent > 0 && amount) {
+    const pct = effectiveOperationType === OPERATION_TYPE.WITHDRAW ? commissionPercentWithdraw : commissionPercentDeposit;
+    if (pct > 0 && amount) {
       const amt = parseFiniteNumberOrZero(amount);
       if (amt > 0) {
-        const computed = (amt * commissionPercent) / 100;
+        const computed = (amt * pct) / 100;
         setCommission(String(computed));
       }
     }
-  }, [amount, commissionPercent]);
+  }, [amount, effectiveOperationType, commissionPercentWithdraw, commissionPercentDeposit]);
 
   // Fetch all source types on mount and cache them
   const loadAllSources = useCallback(async () => {
@@ -230,16 +237,32 @@ export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = tr
 
   const lineLimitPreview = useMemo(() => {
     if (!shop.trim() || !selectedItem || !sourceId) return null;
-    if (sourceKind === SOURCE_KIND.MACHINE) return null;
-    if (effectiveOperationType !== OPERATION_TYPE.WITHDRAW && effectiveOperationType !== OPERATION_TYPE.DEPOSIT) return null;
+    const a = amountNum > 0 ? amountNum : 0;
+
+    if (sourceKind === SOURCE_KIND.MACHINE) {
+      const balance = parseMachineBalance(selectedItem.row);
+      return {
+        kind: "machine",
+        balance,
+        afterBalance: isMachineDebitOperation(effectiveOperationType)
+          ? Math.max(0, balance - a - commissionNum)
+          : effectiveOperationType === OPERATION_TYPE.DEPOSIT
+            ? balance + a
+            : balance,
+      };
+    }
+
     const snap = getLineLimitUsageSnapshot({ sourceKind, sourceRow: selectedItem.row, sourceId, operations: [], now: new Date() });
     if (!snap) return null;
-    const a = amountNum > 0 ? amountNum : 0;
-    if (effectiveOperationType === OPERATION_TYPE.WITHDRAW) {
-      return { kind: "withdraw", remDaily: snap.remDailyWithdraw, remMonthly: snap.remMonthlyWithdraw, previewDelta: a };
-    }
-    return { kind: "deposit", remDaily: snap.remDailyDeposit, remMonthly: snap.remMonthlyDeposit, previewDelta: a };
-  }, [shop, selectedItem, sourceId, sourceKind, effectiveOperationType, amountNum]);
+    return {
+      kind: "line",
+      remDailyWithdraw: snap.remDailyWithdraw,
+      remMonthlyWithdraw: snap.remMonthlyWithdraw,
+      remDailyDeposit: snap.remDailyDeposit,
+      remMonthlyDeposit: snap.remMonthlyDeposit,
+      previewDelta: a,
+    };
+  }, [shop, selectedItem, sourceId, sourceKind, effectiveOperationType, amountNum, commissionNum]);
 
   const suitableSources = useMemo(() => {
     if (amountNum <= 0 || sources.length === 0) return [];
@@ -385,23 +408,62 @@ export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = tr
 
           {lineLimitPreview ? (
             <div className="space-y-2 rounded-lg border border-border bg-muted/30 px-3 py-3 text-sm">
-              <p className="font-medium text-foreground">متبقي الليميت على الخط (من مستند الوسيلة)</p>
-              {lineLimitPreview.kind === "withdraw" ? (
+              {lineLimitPreview.kind === "machine" ? (
                 <>
-                  <p className="text-muted-foreground">متبقي يومي سحب: {lineLimitPreview.remDaily > 0 ? fmtLimitNum(lineLimitPreview.remDaily) : "غير مفعّل (0 في المستند)."}</p>
-                  {lineLimitPreview.previewDelta > 0 && lineLimitPreview.remDaily > 0 ? <p className="text-xs text-muted-foreground">بعد التنفيذ ({fmtLimitNum(lineLimitPreview.previewDelta)}): متبقي يومي تقريبي {fmtLimitNum(lineLimitPreview.remDaily - lineLimitPreview.previewDelta)}</p> : null}
-                  <p className="text-muted-foreground">متبقي شهري سحب: {lineLimitPreview.remMonthly > 0 ? fmtLimitNum(lineLimitPreview.remMonthly) : "غير مفعّل (0 في المستند)."}</p>
-                  {lineLimitPreview.previewDelta > 0 && lineLimitPreview.remMonthly > 0 ? <p className="text-xs text-muted-foreground">بعد التنفيذ ({fmtLimitNum(lineLimitPreview.previewDelta)}): متبقي شهري تقريبي {fmtLimitNum(lineLimitPreview.remMonthly - lineLimitPreview.previewDelta)}</p> : null}
+                  <p className="font-medium text-foreground">رصيد الماكينة</p>
+                  <p className="text-muted-foreground">
+                    الرصيد الحالي: <span className="font-mono">{fmtLimitNum(lineLimitPreview.balance)}</span>
+                  </p>
+                  <p className="text-muted-foreground">
+                    الرصيد بعد العملية: <span className="font-mono">{fmtLimitNum(lineLimitPreview.afterBalance)}</span>
+                  </p>
                 </>
               ) : (
                 <>
-                  <p className="text-muted-foreground">متبقي يومي إيداع: {lineLimitPreview.remDaily > 0 ? fmtLimitNum(lineLimitPreview.remDaily) : "غير مفعّل (0 في المستند)."}</p>
-                  {lineLimitPreview.previewDelta > 0 && lineLimitPreview.remDaily > 0 ? <p className="text-xs text-muted-foreground">بعد التنفيذ ({fmtLimitNum(lineLimitPreview.previewDelta)}): متبقي يومي تقريبي {fmtLimitNum(lineLimitPreview.remDaily - lineLimitPreview.previewDelta)}</p> : null}
-                  <p className="text-muted-foreground">متبقي شهري إيداع: {lineLimitPreview.remMonthly > 0 ? fmtLimitNum(lineLimitPreview.remMonthly) : "غير مفعّل (0 في المستند)."}</p>
-                  {lineLimitPreview.previewDelta > 0 && lineLimitPreview.remMonthly > 0 ? <p className="text-xs text-muted-foreground">بعد التنفيذ ({fmtLimitNum(lineLimitPreview.previewDelta)}): متبقي شهري تقريبي {fmtLimitNum(lineLimitPreview.remMonthly - lineLimitPreview.previewDelta)}</p> : null}
+                  <p className="font-medium text-foreground">الليميت على الخط (من مستند الوسيلة)</p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <div className="space-y-1">
+                      <p className="text-xs font-medium text-muted-foreground">السحب</p>
+                      <p className="text-muted-foreground">
+                        يومي: {lineLimitPreview.remDailyWithdraw > 0 ? fmtLimitNum(lineLimitPreview.remDailyWithdraw) : "غير مفعّل"}
+                      </p>
+                      {lineLimitPreview.previewDelta > 0 && lineLimitPreview.remDailyWithdraw > 0 ? (
+                        <p className="text-xs text-muted-foreground">
+                          بعد التنفيذ: {fmtLimitNum(Math.max(0, lineLimitPreview.remDailyWithdraw - lineLimitPreview.previewDelta))}
+                        </p>
+                      ) : null}
+                      <p className="text-muted-foreground">
+                        شهري: {lineLimitPreview.remMonthlyWithdraw > 0 ? fmtLimitNum(lineLimitPreview.remMonthlyWithdraw) : "غير مفعّل"}
+                      </p>
+                      {lineLimitPreview.previewDelta > 0 && lineLimitPreview.remMonthlyWithdraw > 0 ? (
+                        <p className="text-xs text-muted-foreground">
+                          بعد التنفيذ: {fmtLimitNum(Math.max(0, lineLimitPreview.remMonthlyWithdraw - lineLimitPreview.previewDelta))}
+                        </p>
+                      ) : null}
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs font-medium text-muted-foreground">الإيداع</p>
+                      <p className="text-muted-foreground">
+                        يومي: {lineLimitPreview.remDailyDeposit > 0 ? fmtLimitNum(lineLimitPreview.remDailyDeposit) : "غير مفعّل"}
+                      </p>
+                      {lineLimitPreview.previewDelta > 0 && lineLimitPreview.remDailyDeposit > 0 ? (
+                        <p className="text-xs text-muted-foreground">
+                          بعد التنفيذ: {fmtLimitNum(Math.max(0, lineLimitPreview.remDailyDeposit - lineLimitPreview.previewDelta))}
+                        </p>
+                      ) : null}
+                      <p className="text-muted-foreground">
+                        شهري: {lineLimitPreview.remMonthlyDeposit > 0 ? fmtLimitNum(lineLimitPreview.remMonthlyDeposit) : "غير مفعّل"}
+                      </p>
+                      {lineLimitPreview.previewDelta > 0 && lineLimitPreview.remMonthlyDeposit > 0 ? (
+                        <p className="text-xs text-muted-foreground">
+                          بعد التنفيذ: {fmtLimitNum(Math.max(0, lineLimitPreview.remMonthlyDeposit - lineLimitPreview.previewDelta))}
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground">القيم على الخط هي «متبقي» وتنقص عند كل عملية؛ لا إعادة تعبئة يومية/شهرية تلقائية — عُد للخطوط لتعديل المتبقي عند الحاجة.</p>
                 </>
               )}
-              <p className="text-xs text-muted-foreground">القيم على الخط هي «متبقي» وتنقص عند كل عملية؛ لا إعادة تعبئة يومية/شهرية تلقائية — عُد للخطوط لتعديل المتبقي عند الحاجة.</p>
             </div>
           ) : null}
 
