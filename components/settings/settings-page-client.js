@@ -43,6 +43,7 @@ const LOCK_ITEMS = [
   { key: "money", label: "إخفاء المبالغ", description: "يخفي قيم المبالغ في لوحة التحكم", icon: EyeOff },
   { key: "cash", label: "النقدية", description: "يمنع تعديل رصيد النقدي", icon: MousePointerClick },
   { key: "daily", label: "حذف العمليات", description: "يمنع حذف العمليات", icon: Trash2 },
+  { key: "debts", label: "الديون", description: "يمنع المستخدم من دخول صفحة الديون", icon: HandCoins },
 ];
 
 /**
@@ -62,6 +63,7 @@ export function SettingsPageClient({ userEmail, shop }) {
     money: false,
     cash: false,
     daily: false,
+    debts: false,
   });
   const [commissionPercentWithdraw, setCommissionPercentWithdraw] = useState(0);
   const [commissionPercentDeposit, setCommissionPercentDeposit] = useState(0);
@@ -76,6 +78,7 @@ export function SettingsPageClient({ userEmail, shop }) {
     money: false,
     cash: false,
     daily: false,
+    debts: false,
   });
   const [selectedUserCommissionWithdraw, setSelectedUserCommissionWithdraw] = useState(0);
   const [selectedUserCommissionDeposit, setSelectedUserCommissionDeposit] = useState(0);
@@ -100,6 +103,7 @@ export function SettingsPageClient({ userEmail, shop }) {
         money: data.lockMoney,
         cash: data.lockCash,
         daily: data.lockDaily,
+        debts: data.lockDebts,
       });
       setCommissionPercentWithdraw(data.commissionPercentWithdraw);
       setCommissionPercentDeposit(data.commissionPercentDeposit);
@@ -144,6 +148,7 @@ export function SettingsPageClient({ userEmail, shop }) {
             money: data.lockMoney,
             cash: data.lockCash,
             daily: data.lockDaily,
+            debts: data.lockDebts,
           });
           setSelectedUserCommissionWithdraw(data.commissionPercentWithdraw);
           setSelectedUserCommissionDeposit(data.commissionPercentDeposit);
@@ -173,6 +178,7 @@ export function SettingsPageClient({ userEmail, shop }) {
         lockMoney: locks.money,
         lockCash: locks.cash,
         lockDaily: locks.daily,
+        lockDebts: locks.debts,
         commissionPercentWithdraw,
         commissionPercentDeposit,
       });
@@ -204,6 +210,7 @@ export function SettingsPageClient({ userEmail, shop }) {
         lockMoney: locks.money,
         lockCash: locks.cash,
         lockDaily: locks.daily,
+        lockDebts: locks.debts,
         commissionPercentWithdraw,
         commissionPercentDeposit,
       };
@@ -225,6 +232,7 @@ export function SettingsPageClient({ userEmail, shop }) {
         lockMoney: selectedUserLocks.money,
         lockCash: selectedUserLocks.cash,
         lockDaily: selectedUserLocks.daily,
+        lockDebts: selectedUserLocks.debts,
         commissionPercentWithdraw: selectedUserCommissionWithdraw,
         commissionPercentDeposit: selectedUserCommissionDeposit,
       });
