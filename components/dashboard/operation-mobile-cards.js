@@ -1,8 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import { MessageCircle, Phone, Printer, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { generateInvoicePdfBlob } from "@/lib/dashboard/print-operation-invoice";
 import { OPERATION_TYPE_LABEL, SOURCE_KIND_LABEL } from "@/lib/operations/constants";
 import { getOperationTypeTheme } from "@/lib/ui/operation-type-theme";
 import { cn } from "@/lib/utils";
@@ -26,56 +29,69 @@ function opCreatedAtToDate(ts) {
  * @param {Record<string, unknown> & { id?: string }} op
  * @param {{ branchLabel?: string }} [options]
  */
-function receiverWhatsAppUrl(op, options) {
-  const raw = asString(op.receiver);
-  if (!raw) return "";
-  const cleaned = raw.replace(/[^+\d]/g, "");
-  const text = buildWhatsAppText(op, options);
-  return `https://wa.me/${cleaned}?text=${encodeURIComponent(text)}`;
-}
+async function shareInvoicePdf(op, options) {
+  let blob = null;
+  try {
+    blob = await generateInvoicePdfBlob(op, options);
+  } catch (err) {
+    console.warn("PDF generation failed, falling back to text", err);
+  }
 
-/**
- * @param {Record<string, unknown> & { id?: string }} op
- */
-function receiverCallUrl(op) {
-  const raw = asString(op.receiver);
-  if (!raw) return "";
-  const cleaned = raw.replace(/[^+\d]/g, "");
-  return `tel:${cleaned}`;
+  if (blob) {
+    try {
+      const file = new File([blob], `invoice-${asString(op.id)}.pdf`, { type: "application/pdf" });
+
+      if (typeof navigator.canShare === "function" && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: "فاتورة عملية" });
+        return;
+      }
+
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      toast.success("تم فتح الفاتورة PDF");
+      return;
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") return;
+      console.warn("PDF share/download failed, falling back to text", err);
+    }
+  }
+
+  // Fallback: send text via wa.me
+  const receiverRaw = /** @type {string} */ (asString(op.receiver));
+  if (!receiverRaw) { toast.error("لا يوجد رقم عميل للإرسال"); return; }
+  const cleaned = receiverRaw.replace(/[^+\d]/g, "");
+  const branchLabel = (options?.branchLabel ?? "").trim() || "الفرع";
+  const typeKey = asString(op.type ?? op.operationType);
+  const typeLabel = OPERATION_TYPE_LABEL[/** @type {keyof typeof OPERATION_TYPE_LABEL} */ (typeKey)] ?? typeKey;
+  const val = Number(op.operationVal ?? op.amount ?? 0);
+  const valStr = Number.isFinite(val) ? val.toFixed(2) : "0";
+  const com = Number(op.commation ?? op.commission ?? 0);
+  const comStr = Number.isFinite(com) ? com.toFixed(2) : "0";
+  const src = op.source && typeof op.source === "object" ? /** @type {Record<string, unknown>} */ (op.source) : {};
+  const sourceName = asString(src.name) || asString(op.sourceId);
+  const text = [
+    `فاتورة عملية - ${branchLabel}`,
+    `النوع: ${typeLabel}`,
+    `الوسيلة: ${sourceName}`,
+    `المبلغ: ${valStr}`,
+    `الرسوم: ${comStr}`,
+    `رقم العميل: ${receiverRaw}`,
+    "عميلنا العزيز برجاء عد النقدية قبل الخروج من المحل",
+  ].join("\n");
+  window.open(`https://wa.me/${cleaned}?text=${encodeURIComponent(text)}`, "_blank", "noopener");
+  toast.info("تم إرسال الفاتورة كنص (تعذّر إنشاء PDF)");
 }
 
 /**
  * @param {Record<string, unknown> & { id?: string }} op
  * @param {{ branchLabel?: string }} [options]
  */
-function buildWhatsAppText(op, options) {
-  const branchLabel = (options?.branchLabel ?? "").trim() || "الفرع";
-  const created = opCreatedAtToDate(op.createdAt);
-  const dateStr =
-    created.getTime() === 0
-      ? "—"
-      : created.toLocaleString("ar-EG", { dateStyle: "short", timeStyle: "short" });
-  const typeKey = asString(op.type ?? op.operationType);
-  const typeLabel = OPERATION_TYPE_LABEL[/** @type {keyof typeof OPERATION_TYPE_LABEL} */ (typeKey)] ?? typeKey;
-  const src = op.source && typeof op.source === "object" ? /** @type {Record<string, unknown>} */ (op.source) : {};
-  const sourceName = asString(src.name) || asString(op.sourceId);
-  const val = Number(op.operationVal ?? op.amount ?? 0);
-  const valStr = Number.isFinite(val) ? val.toFixed(2) : "0";
-  const com = Number(op.commation ?? op.commission ?? 0);
-  const comStr = Number.isFinite(com) ? com.toFixed(2) : "0";
-  const receiver = asString(op.receiver);
-
-  const lines = [
-    `فاتورة عملية - ${branchLabel}`,
-    `التاريخ: ${dateStr}`,
-    `النوع: ${typeLabel}`,
-    `الوسيلة: ${sourceName}`,
-    `المبلغ: ${valStr}`,
-    `الرسوم: ${comStr}`,
-  ];
-  if (receiver) lines.push(`رقم العميل: ${receiver}`);
-  lines.push("عميلنا العزيز برجاء عد النقدية قبل الخروج من المحل");
-  return lines.join("\n");
+function receiverCallUrl(op) {
+  const raw = asString(op.receiver);
+  if (!raw) return "";
+  const cleaned = raw.replace(/[^+\d]/g, "");
+  return `tel:${cleaned}`;
 }
 
 /**
@@ -88,6 +104,8 @@ function buildWhatsAppText(op, options) {
  * }} props
  */
 export function OperationMobileCards({ operations, hideMoney = false, onPrint, onDelete, branchLabel }) {
+  const [pdfBusy, setPdfBusy] = useState(/** @type {Record<string, boolean>} */ ({}));
+
   if (operations.length === 0) {
     return <p className="text-center text-sm text-muted-foreground">لا توجد عمليات مطابقة.</p>;
   }
@@ -113,8 +131,16 @@ export function OperationMobileCards({ operations, hideMoney = false, onPrint, o
         const com = Number(op.commation ?? op.commission ?? 0);
         const comStr = Number.isFinite(com) ? com.toFixed(2) : "0";
         const hasReceiver = Boolean(asString(op.receiver));
-        const waUrl = receiverWhatsAppUrl(op, { branchLabel });
         const callUrl = receiverCallUrl(op);
+        const busy = pdfBusy[id] ?? false;
+
+        const handleShare = () => {
+          if (busy) return;
+          setPdfBusy((prev) => ({ ...prev, [id]: true }));
+          shareInvoicePdf(op, { branchLabel }).finally(() => {
+            setPdfBusy((prev) => ({ ...prev, [id]: false }));
+          });
+        };
 
         return (
           <article
@@ -149,11 +175,17 @@ export function OperationMobileCards({ operations, hideMoney = false, onPrint, o
               <div className="flex shrink-0 flex-col gap-1">
                 {hasReceiver ? (
                   <>
-                    <a href={waUrl} target="_blank" rel="noopener noreferrer" title="واتساب">
-                      <Button type="button" variant="outline" size="icon" className="h-8 w-8">
-                        <MessageCircle className="h-4 w-4 text-emerald-500" />
-                      </Button>
-                    </a>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8"
+                      title="إرسال PDF واتساب"
+                      disabled={busy}
+                      onClick={handleShare}
+                    >
+                      <MessageCircle className={cn("h-4 w-4", busy ? "text-muted-foreground" : "text-emerald-500")} />
+                    </Button>
                     <a href={callUrl} title="اتصال">
                       <Button type="button" variant="outline" size="icon" className="h-8 w-8">
                         <Phone className="h-4 w-4 text-sky-500" />

@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Archive, CircleDollarSign, ListOrdered, MessageCircle, Phone, PieChart, Plus, Printer, Trash2, Wallet } from "lucide-react";
 import { toast } from "sonner";
 
+import { cn } from "@/lib/utils";
+
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -27,7 +29,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { CapitalCards } from "@/components/reports/capital-cards";
 import { ExecuteOperationForm } from "@/components/operations/execute-operation-form";
 import { aggregateWithdrawDepositDayMonth } from "@/lib/dashboard/operation-aggregates";
-import { printOperationInvoice } from "@/lib/dashboard/print-operation-invoice";
+import { generateInvoicePdfBlob, printOperationInvoice } from "@/lib/dashboard/print-operation-invoice";
 import {
   OPERATION_TYPE,
   OPERATION_TYPE_LABEL,
@@ -131,6 +133,7 @@ export function DashboardPageClient({ shop, branchLabel, userEmail, userName = "
   const [capitalLoading, setCapitalLoading] = useState(true);
   const [closeDayBusy, setCloseDayBusy] = useState(false);
   const [showCloseDayConfirm, setShowCloseDayConfirm] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(/** @type {Record<string, boolean>} */ ({}));
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(searchInput.trim().toLowerCase()), 280);
@@ -232,6 +235,73 @@ export function DashboardPageClient({ shop, branchLabel, userEmail, userName = "
       }
     },
     [branchLabel, shop],
+  );
+
+  const handleShareInvoicePdf = useCallback(
+    async (op) => {
+      const id = asString(op.id);
+      if (pdfBusy[id]) return;
+      setPdfBusy((prev) => ({ ...prev, [id]: true }));
+
+      try {
+        let blob = null;
+        try {
+          blob = await generateInvoicePdfBlob(op, { branchLabel: branchLabel.trim() || shop.trim() });
+        } catch (err) {
+          console.warn("PDF generation failed", err);
+        }
+
+        if (blob) {
+          try {
+            const file = new File([blob], `invoice-${id}.pdf`, { type: "application/pdf" });
+
+            if (typeof navigator.canShare === "function" && navigator.canShare({ files: [file] })) {
+              await navigator.share({ files: [file], title: "فاتورة عملية" });
+              return;
+            }
+
+            const url = URL.createObjectURL(blob);
+            window.open(url, "_blank");
+            setTimeout(() => URL.revokeObjectURL(url), 5000);
+            toast.success("تم فتح الفاتورة PDF");
+            return;
+          } catch (shareErr) {
+            if (shareErr instanceof Error && shareErr.name === "AbortError") return;
+            console.warn("PDF share/download failed, falling back to text", shareErr);
+          }
+        }
+
+        // Fallback: wa.me text
+        const receiverRaw = asString(op.receiver);
+        if (receiverRaw) {
+          const cleaned = receiverRaw.replace(/[^+\d]/g, "");
+          const typeKey = asString(op.type ?? op.operationType);
+          const typeLabel = OPERATION_TYPE_LABEL[/** @type {keyof typeof OPERATION_TYPE_LABEL} */ (typeKey)] ?? typeKey;
+          const src = op.source && typeof op.source === "object" ? /** @type {Record<string, unknown>} */ (op.source) : {};
+          const srcLabel = asString(src.name) || asString(op.sourceId);
+          const val = Number(op.operationVal ?? op.amount ?? 0);
+          const valStr = Number.isFinite(val) ? val.toFixed(2) : "0";
+          const com = Number(op.commation ?? op.commission ?? 0);
+          const comStr = Number.isFinite(com) ? com.toFixed(2) : "0";
+          const text = [
+            `فاتورة عملية - ${branchLabel}`,
+            `النوع: ${typeLabel}`,
+            `الوسيلة: ${srcLabel}`,
+            `المبلغ: ${valStr}`,
+            `الرسوم: ${comStr}`,
+            `رقم العميل: ${receiverRaw}`,
+            "عميلنا العزيز برجاء عد النقدية قبل الخروج من المحل",
+          ].join("\n");
+          window.open(`https://wa.me/${cleaned}?text=${encodeURIComponent(text)}`, "_blank", "noopener");
+          toast.info("تم إرسال الفاتورة كنص");
+        } else {
+          toast.error("لا يوجد رقم عميل للإرسال");
+        }
+      } finally {
+        setPdfBusy((prev) => ({ ...prev, [id]: false }));
+      }
+    },
+    [branchLabel, shop, pdfBusy],
   );
 
   if (!shop.trim()) {
@@ -399,21 +469,8 @@ export function DashboardPageClient({ shop, branchLabel, userEmail, userName = "
                 const comStr = Number.isFinite(com) ? com.toFixed(2) : "0";
                 const receiverRaw = asString(op.receiver);
                 const hasReceiver = Boolean(receiverRaw);
-                const waUrl = hasReceiver
-                  ? `https://wa.me/${receiverRaw.replace(/[^+\d]/g, "")}?text=${encodeURIComponent(
-                      [
-                        `فاتورة عملية - ${branchLabel}`,
-                        `التاريخ: ${dateLabel}`,
-                        `النوع: ${typeLabel}`,
-                        `الوسيلة: ${srcLabel}`,
-                        `المبلغ: ${valStr}`,
-                        `الرسوم: ${comStr}`,
-                        `رقم العميل: ${receiverRaw}`,
-                        "عميلنا العزيز برجاء عد النقدية قبل الخروج من المحل",
-                      ].join("\n"),
-                    )}`
-                  : "";
                 const callUrl = hasReceiver ? `tel:${receiverRaw.replace(/[^+\d]/g, "")}` : "";
+                const opBusy = pdfBusy[id] ?? false;
                 return (
                   <TableRow key={id}>
                     <TableCell className="whitespace-nowrap">{dateLabel}</TableCell>
@@ -430,11 +487,17 @@ export function DashboardPageClient({ shop, branchLabel, userEmail, userName = "
                       <div className="flex flex-wrap items-center gap-1">
                         {hasReceiver ? (
                           <>
-                            <a href={waUrl} target="_blank" rel="noopener noreferrer" title="واتساب">
-                              <Button type="button" variant="outline" size="icon" className="h-8 w-8 shrink-0">
-                                <MessageCircle className="h-4 w-4 text-emerald-500" aria-hidden />
-                              </Button>
-                            </a>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              className="h-8 w-8 shrink-0"
+                              title="إرسال PDF واتساب"
+                              disabled={opBusy}
+                              onClick={() => handleShareInvoicePdf(op)}
+                            >
+                              <MessageCircle className={cn("h-4 w-4", opBusy ? "text-muted-foreground" : "text-emerald-500")} aria-hidden />
+                            </Button>
                             <a href={callUrl} title="اتصال">
                               <Button type="button" variant="outline" size="icon" className="h-8 w-8 shrink-0">
                                 <Phone className="h-4 w-4 text-sky-500" aria-hidden />
