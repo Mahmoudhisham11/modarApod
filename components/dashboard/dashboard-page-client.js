@@ -29,7 +29,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { CapitalCards } from "@/components/reports/capital-cards";
 import { ExecuteOperationForm } from "@/components/operations/execute-operation-form";
 import { aggregateWithdrawDepositDayMonth } from "@/lib/dashboard/operation-aggregates";
-import { generateInvoicePdfBlob, printOperationInvoice } from "@/lib/dashboard/print-operation-invoice";
+import { printOperationInvoice } from "@/lib/dashboard/print-operation-invoice";
 import {
   OPERATION_TYPE,
   OPERATION_TYPE_LABEL,
@@ -244,59 +244,17 @@ export function DashboardPageClient({ shop, branchLabel, userEmail, userName = "
       setPdfBusy((prev) => ({ ...prev, [id]: true }));
 
       try {
-        let blob = null;
-        try {
-          blob = await generateInvoicePdfBlob(op, { branchLabel: branchLabel.trim() || shop.trim() });
-        } catch (err) {
-          console.warn("PDF generation failed", err);
-        }
-
-        if (blob) {
-          try {
-            const file = new File([blob], `invoice-${id}.pdf`, { type: "application/pdf" });
-
-            if (typeof navigator.canShare === "function" && navigator.canShare({ files: [file] })) {
-              await navigator.share({ files: [file], title: "فاتورة عملية" });
-              return;
-            }
-
-            const url = URL.createObjectURL(blob);
-            window.open(url, "_blank");
-            setTimeout(() => URL.revokeObjectURL(url), 5000);
-            toast.success("تم فتح الفاتورة PDF");
-            return;
-          } catch (shareErr) {
-            if (shareErr instanceof Error && shareErr.name === "AbortError") return;
-            console.warn("PDF share/download failed, falling back to text", shareErr);
-          }
-        }
-
-        // Fallback: wa.me text
         const receiverRaw = asString(op.receiver);
-        if (receiverRaw) {
-          const cleaned = receiverRaw.replace(/[^+\d]/g, "");
-          const typeKey = asString(op.type ?? op.operationType);
-          const typeLabel = OPERATION_TYPE_LABEL[/** @type {keyof typeof OPERATION_TYPE_LABEL} */ (typeKey)] ?? typeKey;
-          const src = op.source && typeof op.source === "object" ? /** @type {Record<string, unknown>} */ (op.source) : {};
-          const srcLabel = asString(src.name) || asString(op.sourceId);
-          const val = Number(op.operationVal ?? op.amount ?? 0);
-          const valStr = Number.isFinite(val) ? val.toFixed(2) : "0";
-          const com = Number(op.commation ?? op.commission ?? 0);
-          const comStr = Number.isFinite(com) ? com.toFixed(2) : "0";
-          const text = [
-            `فاتورة عملية - ${branchLabel}`,
-            `النوع: ${typeLabel}`,
-            `الوسيلة: ${srcLabel}`,
-            `المبلغ: ${valStr}`,
-            `الرسوم: ${comStr}`,
-            `رقم العميل: ${receiverRaw}`,
-            "عميلنا العزيز برجاء عد النقدية قبل الخروج من المحل",
-          ].join("\n");
-          window.open(`https://wa.me/${cleaned}?text=${encodeURIComponent(text)}`, "_blank", "noopener");
-          toast.info("تم إرسال الفاتورة كنص");
-        } else {
+        if (!receiverRaw) {
           toast.error("لا يوجد رقم عميل للإرسال");
+          return;
         }
+        const cleaned = receiverRaw.replace(/[^+\d]/g, "");
+        const branch = (branchLabel ?? "").trim() || (shop ?? "").trim();
+        const baseUrl = window.location.origin;
+        const invoiceUrl = `${baseUrl}/api/invoice/${encodeURIComponent(id)}${branch ? `?branch=${encodeURIComponent(branch)}` : ""}`;
+        window.open(`https://wa.me/${cleaned}?text=${encodeURIComponent(invoiceUrl)}`, "_blank", "noopener");
+        toast.success("تم إرسال رابط الفاتورة");
       } finally {
         setPdfBusy((prev) => ({ ...prev, [id]: false }));
       }
@@ -576,6 +534,7 @@ export function DashboardPageClient({ shop, branchLabel, userEmail, userName = "
             userEmail={userEmail}
             userName={userName}
             showTitle={false}
+            commissionPercent={userLocks?.commissionPercent}
             onSuccess={() => { setShowNewOperation(false); reload(); }}
           />
         </DialogContent>

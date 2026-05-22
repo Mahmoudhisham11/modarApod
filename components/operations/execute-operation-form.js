@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -34,7 +34,7 @@ import {
   parseMachineBalance,
   suitabilityDescriptionAr,
 } from "@/lib/operations/eligibility";
-import { createOperationWithUpdates, fetchOperationsByShop } from "@/lib/operations/operations-service";
+import { createOperationWithUpdates } from "@/lib/operations/operations-service";
 import { fetchUserDocByEmail, userLocksFromData } from "@/lib/auth/user-locks";
 import { cn } from "@/lib/utils";
 
@@ -89,18 +89,66 @@ function toastFirestoreError(err, hint) {
 }
 
 /**
+ * تحديث التخزين المؤقت بعد تنفيذ عملية بنجاح
+ * @param {import("@/lib/operations/constants").SourceKind} kind
+ * @param {Array<{ id: string; row: Record<string, unknown> }>} cache
+ * @param {string} sourceId
+ * @param {import("@/lib/operations/constants").OperationType} opType
+ * @param {number} amount
+ * @param {number} commission
+ * @param {string} [targetId]
+ * @returns {Array<{ id: string; row: Record<string, unknown> }>}
+ */
+function applyOperationToCache(kind, cache, sourceId, opType, amount, commission, targetId) {
+  return cache.map((item) => {
+    if (item.id !== sourceId && item.id !== targetId) return item;
+    const row = { ...item.row };
+
+    if (kind === SOURCE_KIND.MACHINE) {
+      const bal = parseMachineBalance(row);
+      if (item.id === sourceId && opType === OPERATION_TYPE.DEPOSIT) {
+        row.balance = bal + amount;
+      } else if (item.id === sourceId && opType === OPERATION_TYPE.BALANCE_TRANSFER) {
+        row.balance = bal - amount - commission;
+      } else if (item.id === sourceId) {
+        row.balance = bal - amount - commission;
+      }
+      if (item.id === targetId && opType === OPERATION_TYPE.BALANCE_TRANSFER) {
+        row.balance = (parseMachineBalance(row)) + amount;
+      }
+    } else {
+      const bal = parseLineAmount(row);
+      if (opType === OPERATION_TYPE.WITHDRAW) {
+        row.amount = bal + amount;
+        const dw = Number(row.dailyWithdraw) || 0;
+        if (dw > 0) row.dailyWithdraw = Math.max(0, dw - amount);
+        const wm = Number(row.withdrawLimit) || 0;
+        if (wm > 0) row.withdrawLimit = Math.max(0, wm - amount);
+      } else if (opType === OPERATION_TYPE.DEPOSIT) {
+        row.amount = bal - amount;
+        const dd = Number(row.dailyDeposit) || 0;
+        if (dd > 0) row.dailyDeposit = Math.max(0, dd - amount);
+        const dm = Number(row.depositLimit) || 0;
+        if (dm > 0) row.depositLimit = Math.max(0, dm - amount);
+      }
+    }
+
+    return { ...item, row };
+  });
+}
+
+/**
  * @param {{
  *   shop: string;
  *   userEmail: string;
  *   userName: string;
  *   showTitle?: boolean;
  *   onSuccess?: () => void | Promise<void>;
+ *   commissionPercent?: number;
  * }} props
  */
-export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = true, onSuccess }) {
+export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = true, onSuccess, commissionPercent: propCommissionPercent }) {
   const [sourceKind, setSourceKind] = useState(SOURCE_KIND.TELECOM);
-  const [sources, setSources] = useState([]);
-  const [operations, setOperations] = useState([]);
   const [sourceId, setSourceId] = useState("");
   const [operationType, setOperationType] = useState(OPERATION_TYPE.WITHDRAW);
   const [targetId, setTargetId] = useState("");
@@ -110,10 +158,12 @@ export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = tr
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [commissionPercent, setCommissionPercent] = useState(0);
+  const [commissionPercent, setCommissionPercent] = useState(propCommissionPercent ?? 0);
+  const [allSourcesCache, setAllSourcesCache] = useState(/** @type {Record<string, Array<{ id: string; row: Record<string, unknown> }>>} */ ({}));
 
-  // Fetch commission percent from user doc
+  // Fetch commission percent from user doc if not provided as prop
   useEffect(() => {
+    if (propCommissionPercent !== undefined) return;
     let cancelled = false;
     (async () => {
       if (!userEmail) return;
@@ -123,7 +173,7 @@ export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = tr
       if (!cancelled) setCommissionPercent(data.commissionPercent);
     })();
     return () => { cancelled = true; };
-  }, [userEmail]);
+  }, [userEmail, propCommissionPercent]);
 
   // Auto-calculate commission when amount or percent changes
   useEffect(() => {
@@ -136,44 +186,38 @@ export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = tr
     }
   }, [amount, commissionPercent]);
 
-  const loadOperations = useCallback(async () => {
+  // Fetch all source types on mount and cache them
+  const loadAllSources = useCallback(async () => {
     const s = shop.trim();
-    if (!s) { setOperations([]); return; }
-    try { setOperations(await fetchOperationsByShop(s)); } catch (e) { toastFirestoreError(e, "operations"); }
-  }, [shop]);
-
-  const loadSources = useCallback(async () => {
-    const s = shop.trim();
-    if (!s) { setSources([]); return; }
+    if (!s) { setAllSourcesCache({}); setLoading(false); return; }
     setLoading(true);
     try {
-      if (sourceKind === SOURCE_KIND.TELECOM) {
-        const data = await fetchNumbersByShop(s);
-        setSources(data.filter(isTelecomRow).map((d) => ({ id: d.id, row: d })));
-      } else if (sourceKind === SOURCE_KIND.INSTAPAY) {
-        const data = await fetchInstapayLinesByShop(s);
-        setSources(data.map((d) => ({ id: d.id, row: d })));
-      } else {
-        const data = await fetchMachinesByShop(s);
-        setSources(data.map((d) => ({ id: d.id, row: d })));
-      }
+      const [telecomData, instapayData, machineData] = await Promise.all([
+        fetchNumbersByShop(s).then((d) => d.filter(isTelecomRow).map((x) => ({ id: x.id, row: x }))),
+        fetchInstapayLinesByShop(s).then((d) => d.map((x) => ({ id: x.id, row: x }))),
+        fetchMachinesByShop(s).then((d) => d.map((x) => ({ id: x.id, row: x }))),
+      ]);
+      setAllSourcesCache({
+        [SOURCE_KIND.TELECOM]: telecomData,
+        [SOURCE_KIND.INSTAPAY]: instapayData,
+        [SOURCE_KIND.MACHINE]: machineData,
+      });
     } catch (e) {
-      toastFirestoreError(e, "المصدر");
-      setSources([]);
+      toastFirestoreError(e, "المصادر");
     } finally { setLoading(false); }
-  }, [shop, sourceKind]);
+  }, [shop]);
 
   useEffect(() => {
     let cancelled = false;
-    (async () => { await Promise.resolve(); if (cancelled) return; await loadOperations(); })();
+    (async () => { await Promise.resolve(); if (cancelled) return; await loadAllSources(); })();
     return () => { cancelled = true; };
-  }, [loadOperations]);
+  }, [loadAllSources]);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => { await Promise.resolve(); if (cancelled) return; setSourceId(""); setTargetId(""); await loadSources(); })();
-    return () => { cancelled = true; };
-  }, [loadSources]);
+  // Derive current sources from cache based on selected kind
+  const sources = useMemo(
+    () => allSourcesCache[sourceKind] ?? [],
+    [allSourcesCache, sourceKind],
+  );
 
   const allowedTypes = useMemo(() => operationTypesForSourceKind(sourceKind), [sourceKind]);
   const effectiveOperationType = useMemo(
@@ -199,8 +243,8 @@ export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = tr
 
   const suitableSources = useMemo(() => {
     if (amountNum <= 0 || sources.length === 0) return [];
-    return listSuitableSourcesForOperation({ candidates: sources, sourceKind, operationType: effectiveOperationType, amount: amountNum, commission: commissionNum, operations });
-  }, [sources, sourceKind, effectiveOperationType, amountNum, commissionNum, operations]);
+    return listSuitableSourcesForOperation({ candidates: sources, sourceKind, operationType: effectiveOperationType, amount: amountNum, commission: commissionNum, operations: [] });
+  }, [sources, sourceKind, effectiveOperationType, amountNum, commissionNum]);
 
   const selectedSourceIsSuitable = useMemo(() => {
     if (!sourceId || amountNum <= 0) return true;
@@ -221,7 +265,7 @@ export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = tr
     if (!sourceId) { toast.error("اختر الوسيلة."); return; }
     if (!selectedItem) { toast.error("الوسيلة المختارة غير صالحة."); return; }
     if (effectiveOperationType === OPERATION_TYPE.BALANCE_TRANSFER && (!targetId || targetId === sourceId)) { toast.error("اختر ماكينة هدف صالحة."); return; }
-    const gate = analyzeOperation({ sourceKind, sourceRow: selectedItem.row, sourceId, operationType: effectiveOperationType, amount: amountNum, commission: commissionNum, operations });
+    const gate = analyzeOperation({ sourceKind, sourceRow: selectedItem.row, sourceId, operationType: effectiveOperationType, amount: amountNum, commission: commissionNum, operations: [] });
     if (!gate.executable) { toast.error(gate.messages[0] || "العملية غير مسموحة."); return; }
     setSubmitting(true);
     try {
@@ -238,9 +282,22 @@ export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = tr
         notes,
         targetId: effectiveOperationType === OPERATION_TYPE.BALANCE_TRANSFER ? targetId : undefined,
       });
+
+      // Update cache locally instead of refetching
+      setAllSourcesCache((prev) => {
+        const updated = { ...prev };
+        const cacheKey = sourceKind;
+        if (updated[cacheKey]) {
+          updated[cacheKey] = applyOperationToCache(
+            sourceKind, updated[cacheKey], sourceId,
+            effectiveOperationType, amountNum, commissionNum, targetId,
+          );
+        }
+        return updated;
+      });
+
       toast.success("تم تنفيذ العملية وتسجيلها.");
       resetForm();
-      await Promise.all([loadSources(), loadOperations()]);
       if (onSuccess) await onSuccess();
     } catch (err) {
       toastFirestoreError(err, "operations / المصدر");
