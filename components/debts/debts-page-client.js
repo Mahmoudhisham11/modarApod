@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { HandCoins, ImageIcon, Plus, Search, Trash2, X } from "lucide-react";
+import { CalendarDays, HandCoins, ImageIcon, Plus, Search, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { useFeatureLock } from "@/hooks/use-feature-lock";
@@ -87,6 +87,23 @@ export function DebtsPageClient({ shop, userEmail }) {
       prev.map((d) => (d.id === debtId ? { ...d, remaining: newRemaining } : d)),
     );
   };
+
+  // Notify about due debts on load
+  useEffect(() => {
+    if (loading || debts.length === 0) return;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const dueDebts = debts.filter((d) => {
+      if (!d.dueDate || d.remaining <= 0) return false;
+      const dd = new Date(d.dueDate + "T00:00:00");
+      dd.setHours(0, 0, 0, 0);
+      return dd <= today;
+    });
+    if (dueDebts.length > 0) {
+      const names = dueDebts.map((d) => d.customerName).filter(Boolean).join("، ");
+      toast.warning(`موعد سداد دين: ${names}`, { duration: 8000 });
+    }
+  }, [loading, debts]);
 
   return (
     <div className="space-y-4">
@@ -186,6 +203,7 @@ export function DebtsPageClient({ shop, userEmail }) {
                   <TableHead>المتبقي</TableHead>
                   <TableHead>ملاحظات</TableHead>
                   <TableHead className="w-16">صورة</TableHead>
+                  <TableHead className="w-32">موعد السداد</TableHead>
                   <TableHead className="w-28" />
                 </TableRow>
               </TableHeader>
@@ -241,6 +259,29 @@ export function DebtsPageClient({ shop, userEmail }) {
                           </span>
                         )}
                       </TableCell>
+                      <TableCell className="text-nowrap">
+                        {debt.dueDate ? (
+                          (() => {
+                            const dd = new Date(debt.dueDate + "T00:00:00");
+                            const today = new Date();
+                            today.setHours(0, 0, 0, 0);
+                            const isOverdue = dd <= today && !isFullyPaid;
+                            return (
+                              <span
+                                className={cn(
+                                  "flex items-center justify-center gap-1 text-xs",
+                                  isOverdue ? "font-semibold text-destructive" : "text-muted-foreground",
+                                )}
+                              >
+                                {isOverdue ? <CalendarDays className="h-3 w-3" /> : null}
+                                {dd.toLocaleDateString("ar-EG", { year: "numeric", month: "short", day: "numeric" })}
+                              </span>
+                            );
+                          })()
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">
                           {!isFullyPaid ? (
@@ -248,6 +289,7 @@ export function DebtsPageClient({ shop, userEmail }) {
                               debtId={debt.id}
                               customerName={debt.customerName ?? ""}
                               currentRemaining={remaining}
+                              debtType={debt.type}
                               shop={shop}
                               userEmail={userEmail}
                               onPaymentDone={(newRemaining) => handlePaymentDone(debt.id, newRemaining)}

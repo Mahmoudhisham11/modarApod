@@ -9,7 +9,7 @@ import { fetchShopActivationAlerts, fetchShopLimitAlerts } from "@/lib/lines/lim
  * @param {{ enabled?: boolean; refreshMs?: number }} [options]
  */
 export function useLimitAlerts(shop, options = {}) {
-  const { enabled = true, refreshMs = 60_000 } = options;
+  const { enabled = true, refreshMs = 300_000 } = options;
   const [limitAlerts, setLimitAlerts] = useState(/** @type {Awaited<ReturnType<typeof fetchShopLimitAlerts>>} */ ([]));
   const [activationAlerts, setActivationAlerts] = useState(/** @type {Awaited<ReturnType<typeof fetchShopActivationAlerts>>} */ ([]));
   const [loading, setLoading] = useState(false);

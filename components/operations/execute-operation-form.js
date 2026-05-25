@@ -14,10 +14,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { fetchInstapayLinesByShop } from "@/lib/instapay/instapay-lines-service";
 import { parseFiniteNumberOrZero } from "@/lib/lines/line-payload";
-import { fetchNumbersByShop } from "@/lib/lines/numbers-service";
-import { fetchMachinesByShop } from "@/lib/machines/machines-service";
+import { loadSources } from "@/lib/sources/sources-cache";
 import {
   OPERATION_TYPE,
   OPERATION_TYPE_LABEL,
@@ -181,21 +179,17 @@ export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = tr
     return () => { cancelled = true; };
   }, [userEmail, propCommissionPercentWithdraw, propCommissionPercentDeposit]);
 
-  // Fetch all source types on mount and cache them
+  // Fetch all source types on mount (from module-level cache, 0 reads after first load)
   const loadAllSources = useCallback(async () => {
     const s = shop.trim();
     if (!s) { setAllSourcesCache({}); setLoading(false); return; }
     setLoading(true);
     try {
-      const [telecomData, instapayData, machineData] = await Promise.all([
-        fetchNumbersByShop(s).then((d) => d.filter(isTelecomRow).map((x) => ({ id: x.id, row: x }))),
-        fetchInstapayLinesByShop(s).then((d) => d.map((x) => ({ id: x.id, row: x }))),
-        fetchMachinesByShop(s).then((d) => d.map((x) => ({ id: x.id, row: x }))),
-      ]);
+      const raw = await loadSources(s);
       setAllSourcesCache({
-        [SOURCE_KIND.TELECOM]: telecomData,
-        [SOURCE_KIND.INSTAPAY]: instapayData,
-        [SOURCE_KIND.MACHINE]: machineData,
+        [SOURCE_KIND.TELECOM]: raw.telecom.filter(isTelecomRow).map((x) => ({ id: x.id, row: x })),
+        [SOURCE_KIND.INSTAPAY]: raw.instapay.map((x) => ({ id: x.id, row: x })),
+        [SOURCE_KIND.MACHINE]: raw.machines.map((x) => ({ id: x.id, row: x })),
       });
     } catch (e) {
       toastFirestoreError(e, "المصادر");

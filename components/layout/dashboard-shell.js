@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { LockDialogProvider } from "@/contexts/lock-dialog-context";
 import { SubscriptionGuard } from "@/components/auth/subscription-guard";
 import { AppHeader } from "@/components/layout/app-header";
 import { AppSidebar } from "@/components/layout/app-sidebar";
@@ -56,7 +57,9 @@ export function DashboardShell({ user, children }) {
           onToggleSidebar={() => setSidebarCollapsed((c) => !c)}
         />
         <main className="flex-1 p-6">
-          <SubscriptionGuard userEmail={user.email}>{children}</SubscriptionGuard>
+          <SubscriptionGuard userEmail={user.email}>
+            <LockDialogProvider>{children}</LockDialogProvider>
+          </SubscriptionGuard>
         </main>
       </div>
     </div>

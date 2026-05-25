@@ -1,13 +1,13 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import { useLockDialogContext } from "@/contexts/lock-dialog-context";
 import {
   fetchUserDocByEmail,
   isLockEnabled,
-  promptLockPassword,
   subscribeUserLocks,
   userLocksFromData,
   verifyLockPassword,
@@ -21,59 +21,55 @@ import {
 export function useFeatureLock(userEmail, lockKey, options = {}) {
   const router = useRouter();
   const redirectTo = options.redirectTo ?? "/";
+  const { prompt } = useLockDialogContext();
   const [loading, setLoading] = useState(true);
   const [authorized, setAuthorized] = useState(false);
   const [locks, setLocks] = useState(/** @type {ReturnType<typeof userLocksFromData> | null} */ (null));
 
+  const check = useCallback(async () => {
+    const email = userEmail.trim().toLowerCase();
+    if (!email) {
+      setAuthorized(false);
+      setLoading(false);
+      return;
+    }
+
+    const found = await fetchUserDocByEmail(email);
+
+    if (!found) {
+      setAuthorized(false);
+      setLocks(null);
+      setLoading(false);
+      return;
+    }
+
+    const parsed = userLocksFromData(found.data);
+    setLocks(parsed);
+
+    if (!isLockEnabled(parsed, lockKey)) {
+      setAuthorized(true);
+      setLoading(false);
+      return;
+    }
+
+    const pass = await prompt(lockKey, parsed);
+    if (pass !== null && verifyLockPassword(parsed, lockKey, pass)) {
+      setAuthorized(true);
+    } else {
+      if (pass !== null) toast.error("كلمة المرور غير صحيحة");
+      setAuthorized(false);
+      router.replace(redirectTo);
+    }
+    setLoading(false);
+  }, [userEmail, lockKey, redirectTo, router, prompt]);
+
   useEffect(() => {
     let cancelled = false;
-
     (async () => {
-      const email = userEmail.trim().toLowerCase();
-      if (!email) {
-        if (!cancelled) {
-          setAuthorized(false);
-          setLoading(false);
-        }
-        return;
-      }
-
-      const found = await fetchUserDocByEmail(email);
-      if (cancelled) return;
-
-      if (!found) {
-        setAuthorized(false);
-        setLocks(null);
-        setLoading(false);
-        return;
-      }
-
-      const parsed = userLocksFromData(found.data);
-      setLocks(parsed);
-
-      if (!isLockEnabled(parsed, lockKey)) {
-        setAuthorized(true);
-        setLoading(false);
-        return;
-      }
-
-      const pass = promptLockPassword(lockKey);
-      if (cancelled) return;
-
-      if (pass !== null && verifyLockPassword(parsed, lockKey, pass)) {
-        setAuthorized(true);
-      } else {
-        if (pass !== null) toast.error("كلمة المرور غير صحيحة");
-        setAuthorized(false);
-        router.replace(redirectTo);
-      }
-      setLoading(false);
+      await check();
     })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [userEmail, lockKey, redirectTo, router]);
+    return () => { cancelled = true; };
+  }, [check]);
 
   return { loading, authorized, locks };
 }
@@ -96,10 +92,11 @@ export function useUserLocks(userEmail) {
 /**
  * @param {ReturnType<typeof userLocksFromData> | null} locks
  * @param {import("@/lib/auth/user-locks").LockKey} lockKey
+ * @param {(lockKey: import("@/lib/auth/user-locks").LockKey, locks: ReturnType<typeof userLocksFromData>) => Promise<string | null>} promptFn
  */
-export function requireLockPassword(locks, lockKey) {
+export async function requireLockPassword(locks, lockKey, promptFn) {
   if (!locks || !isLockEnabled(locks, lockKey)) return true;
-  const pass = promptLockPassword(lockKey);
+  const pass = await promptFn(lockKey, locks);
   if (pass === null) return false;
   if (!verifyLockPassword(locks, lockKey, pass)) {
     toast.error("كلمة المرور غير صحيحة");

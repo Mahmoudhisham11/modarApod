@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Camera, HandCoins, ImageIcon, Trash2, Upload } from "lucide-react";
+import { Camera, CalendarDays, HandCoins, ImageIcon, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 
 import { Check } from "lucide-react";
@@ -37,6 +37,7 @@ export function AddDebtDialog({ shop, userEmail, onDebtCreated, children }) {
   const [busy, setBusy] = useState(false);
   const [imageFile, setImageFile] = useState(/** @type {File | null} */ (null));
   const [imagePreview, setImagePreview] = useState(/** @type {string | null} */ (null));
+  const [dueDate, setDueDate] = useState("");
   const cameraRef = useRef(/** @type {HTMLInputElement | null} */ (null));
   const fileRef = useRef(/** @type {HTMLInputElement | null} */ (null));
 
@@ -50,6 +51,7 @@ export function AddDebtDialog({ shop, userEmail, onDebtCreated, children }) {
     setNote("");
     setImageFile(null);
     setImagePreview(null);
+    setDueDate("");
   };
 
   const handleImageSelect = (file) => {
@@ -93,6 +95,7 @@ export function AddDebtDialog({ shop, userEmail, onDebtCreated, children }) {
         createdBy: userEmail,
         note: note.trim(),
         imageUrl,
+        dueDate: dueDate.trim(),
       });
       toast.success("تم تسجيل الدين بنجاح.");
       setOpen(false);
@@ -172,6 +175,21 @@ export function AddDebtDialog({ shop, userEmail, onDebtCreated, children }) {
                 {type === "عليك" ? <Check className="h-3.5 w-3.5" /> : null}
                 عليك (مستحق عليك)
               </button>
+            </div>
+          </div>
+
+          {/* Due date */}
+          <div className="space-y-2">
+            <Label htmlFor="debt-due-date">موعد السداد (اختياري)</Label>
+            <div className="relative">
+              <CalendarDays className="pointer-events-none absolute end-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                id="debt-due-date"
+                type="date"
+                value={dueDate}
+                onChange={(e) => setDueDate(e.target.value)}
+                className="ps-3 pe-9"
+              />
             </div>
           </div>
 
