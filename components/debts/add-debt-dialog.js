@@ -1,7 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { Camera, CalendarDays, HandCoins, ImageIcon, Trash2, Upload } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Camera, CalendarDays, HandCoins, Landmark, Trash2, Upload, Wallet } from "lucide-react";
 import { toast } from "sonner";
 
 import { Check } from "lucide-react";
@@ -18,6 +18,14 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { SOURCE_KIND, SOURCE_KIND_LABEL } from "@/lib/operations/constants";
 import { cn } from "@/lib/utils";
 
 /**
@@ -38,11 +46,56 @@ export function AddDebtDialog({ shop, userEmail, onDebtCreated, children }) {
   const [imageFile, setImageFile] = useState(/** @type {File | null} */ (null));
   const [imagePreview, setImagePreview] = useState(/** @type {string | null} */ (null));
   const [dueDate, setDueDate] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState(/** @type {"cash" | "wallet" | ""} */ (""));
+  const [sourceKind, setSourceKind] = useState(/** @type {import("@/lib/operations/constants").SourceKind} */ (SOURCE_KIND.TELECOM));
+  const [sourceId, setSourceId] = useState("");
+  const [sources, setSources] = useState(/** @type {Array<{ id: string; label: string; balance: number }>} */ ([]));
+  const [sourcesLoading, setSourcesLoading] = useState(false);
   const cameraRef = useRef(/** @type {HTMLInputElement | null} */ (null));
   const fileRef = useRef(/** @type {HTMLInputElement | null} */ (null));
 
   const amt = Number(amount);
   const amtValid = Number.isFinite(amt) && amt > 0;
+  const selectedSource = useMemo(() => sources.find((s) => s.id === sourceId), [sources, sourceId]);
+
+  const loadSources = useCallback(async () => {
+    if (paymentMethod !== "wallet") return;
+    setSourcesLoading(true);
+    try {
+      const col = sourceKind === SOURCE_KIND.TELECOM
+        ? "numbers"
+        : sourceKind === SOURCE_KIND.INSTAPAY
+          ? "instapayLines"
+          : "machines";
+      const { collection, getDocs, limit, query, where } = await import("firebase/firestore");
+      const { db } = await import("@/app/firebase");
+      const q = query(collection(db, col), where("shop", "==", shop.trim()), limit(200));
+      const snap = await getDocs(q);
+      const list = snap.docs.map((d) => {
+        const row = d.data();
+        let balance = 0;
+        if (sourceKind === SOURCE_KIND.MACHINE) {
+          balance = Number(row.balance) || 0;
+        } else {
+          balance = Number(row.amount ?? row.balance ?? 0) || 0;
+        }
+        const label = row.name ?? row.phone ?? row.number ?? row.line ?? d.id;
+        return { id: d.id, label: String(label), balance };
+      });
+      setSources(list);
+      if (list.length > 0 && !list.find((s) => s.id === sourceId)) {
+        setSourceId(list[0].id);
+      }
+    } catch {
+      setSources([]);
+    } finally {
+      setSourcesLoading(false);
+    }
+  }, [sourceKind, shop, sourceId, paymentMethod]);
+
+  useEffect(() => {
+    if (paymentMethod === "wallet") void loadSources();
+  }, [paymentMethod, sourceKind, loadSources]);
 
   const reset = () => {
     setCustomerName("");
@@ -52,6 +105,10 @@ export function AddDebtDialog({ shop, userEmail, onDebtCreated, children }) {
     setImageFile(null);
     setImagePreview(null);
     setDueDate("");
+    setPaymentMethod("");
+    setSourceKind(SOURCE_KIND.TELECOM);
+    setSourceId("");
+    setSources([]);
   };
 
   const handleImageSelect = (file) => {
@@ -79,6 +136,10 @@ export function AddDebtDialog({ shop, userEmail, onDebtCreated, children }) {
       toast.error("أدخل مبلغًا صحيحًا أكبر من صفر.");
       return;
     }
+    if (paymentMethod === "wallet" && !sourceId) {
+      toast.error("اختر الوسيلة.");
+      return;
+    }
     setBusy(true);
     try {
       let imageUrl = "";
@@ -96,6 +157,9 @@ export function AddDebtDialog({ shop, userEmail, onDebtCreated, children }) {
         note: note.trim(),
         imageUrl,
         dueDate: dueDate.trim(),
+        paymentMethod: paymentMethod || undefined,
+        sourceId: paymentMethod === "wallet" ? sourceId : undefined,
+        sourceKind: paymentMethod === "wallet" ? sourceKind : undefined,
       });
       toast.success("تم تسجيل الدين بنجاح.");
       setOpen(false);
@@ -176,6 +240,104 @@ export function AddDebtDialog({ shop, userEmail, onDebtCreated, children }) {
                 عليك (مستحق عليك)
               </button>
             </div>
+          </div>
+
+          {/* Payment method */}
+          <div className="space-y-2">
+            <Label>طريقة الدفع (اختياري)</Label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className={cn(
+                  "flex flex-1 items-center justify-center gap-1.5 rounded-md border px-3 py-2 text-sm font-medium transition-colors",
+                  paymentMethod === "cash"
+                    ? "border-primary/50 bg-primary/10 text-primary"
+                    : "border-border bg-background text-muted-foreground hover:bg-muted",
+                )}
+                onClick={() => { setPaymentMethod(paymentMethod === "cash" ? "" : "cash"); setSourceId(""); }}
+              >
+                <Landmark className="h-4 w-4" />
+                نقدي
+              </button>
+              <button
+                type="button"
+                className={cn(
+                  "flex flex-1 items-center justify-center gap-1.5 rounded-md border px-3 py-2 text-sm font-medium transition-colors",
+                  paymentMethod === "wallet"
+                    ? "border-primary/50 bg-primary/10 text-primary"
+                    : "border-border bg-background text-muted-foreground hover:bg-muted",
+                )}
+                onClick={() => { setPaymentMethod(paymentMethod === "wallet" ? "" : "wallet"); }}
+              >
+                <Wallet className="h-4 w-4" />
+                محفظة
+              </button>
+            </div>
+            {paymentMethod === "cash" ? (
+              <p className="text-xs text-muted-foreground">
+                {type === "ليك" ? "سيتم خصم المبلغ من النقدي" : "سيتم إيداع المبلغ في النقدي"}
+              </p>
+            ) : null}
+            {paymentMethod === "wallet" ? (
+              <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-3">
+                <div className="space-y-2">
+                  <Label>نوع الوسيلة</Label>
+                  <Select
+                    value={sourceKind}
+                    onValueChange={(v) => { setSourceKind(/** @type {import("@/lib/operations/constants").SourceKind} */ (v)); setSourceId(""); }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={SOURCE_KIND.TELECOM}>{SOURCE_KIND_LABEL.telecom}</SelectItem>
+                      <SelectItem value={SOURCE_KIND.INSTAPAY}>{SOURCE_KIND_LABEL.instapay}</SelectItem>
+                      <SelectItem value={SOURCE_KIND.MACHINE}>{SOURCE_KIND_LABEL.machine}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>اختر الوسيلة</Label>
+                  {sourcesLoading ? (
+                    <p className="text-xs text-muted-foreground">جاري التحميل…</p>
+                  ) : sources.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">لا توجد وسائل متاحة.</p>
+                  ) : (
+                    <Select value={sourceId} onValueChange={setSourceId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="اختر…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {sources.map((s) => (
+                          <SelectItem key={s.id} value={s.id}>
+                            {s.label} (الرصيد: {s.balance.toFixed(2)})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+                {selectedSource && amtValid ? (
+                  <div className="rounded-md border border-border bg-background px-3 py-2 text-xs">
+                    <span className="text-muted-foreground">الرصيد الحالي: </span>
+                    <span className="font-mono tabular-nums">{selectedSource.balance.toFixed(2)}</span>
+                    {amt <= selectedSource.balance ? (
+                      <>
+                        <span className="mx-1 text-muted-foreground">→</span>
+                        <span className="font-mono tabular-nums">
+                          {type === "ليك"
+                            ? (selectedSource.balance - amt).toFixed(2)
+                            : (selectedSource.balance + amt).toFixed(2)}
+                        </span>
+                      </>
+                    ) : null}
+                  </div>
+                ) : null}
+                {amtValid && selectedSource && amt > selectedSource.balance && type === "ليك" ? (
+                  <p className="text-xs text-destructive">الرصيد لا يكفي.</p>
+                ) : null}
+              </div>
+            ) : null}
           </div>
 
           {/* Due date */}

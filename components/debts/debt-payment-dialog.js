@@ -24,6 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { SOURCE_KIND, SOURCE_KIND_LABEL } from "@/lib/operations/constants";
+import { getLineLimitUsageSnapshot, lineLimitRemaindersFromRow } from "@/lib/operations/eligibility";
 import { cn } from "@/lib/utils";
 
 /**
@@ -55,7 +56,7 @@ export function DebtPaymentDialog({
   const [paymentMethod, setPaymentMethod] = useState(/** @type {"cash" | "wallet"} */ ("cash"));
   const [sourceKind, setSourceKind] = useState(/** @type {import("@/lib/operations/constants").SourceKind} */ (SOURCE_KIND.TELECOM));
   const [sourceId, setSourceId] = useState("");
-  const [sources, setSources] = useState(/** @type {Array<{ id: string; label: string; balance: number }>} */ ([]));
+  const [sources, setSources] = useState(/** @type {Array<{ id: string; label: string; balance: number; row: Record<string, unknown> }>} */ ([]));
   const [sourcesLoading, setSourcesLoading] = useState(false);
 
   const amt = Number(amount);
@@ -63,6 +64,19 @@ export function DebtPaymentDialog({
   const exceedsRemaining = amtValid && amt > currentRemaining;
   const selectedSource = useMemo(() => sources.find((s) => s.id === sourceId), [sources, sourceId]);
   const exceedsSourceBalance = selectedSource && amtValid && amt > selectedSource.balance;
+
+  const lineLimitPreview = useMemo(() => {
+    if (!selectedSource || !amtValid || sourceKind === SOURCE_KIND.MACHINE) return null;
+    const snap = getLineLimitUsageSnapshot({ sourceKind, sourceRow: selectedSource.row, sourceId, operations: [], now: new Date() });
+    if (!snap) return null;
+    return {
+      remDailyWithdraw: snap.remDailyWithdraw,
+      remMonthlyWithdraw: snap.remMonthlyWithdraw,
+      remDailyDeposit: snap.remDailyDeposit,
+      remMonthlyDeposit: snap.remMonthlyDeposit,
+      previewDelta: amt,
+    };
+  }, [selectedSource, amtValid, sourceKind, sourceId, amt]);
 
   const loadSources = useCallback(async () => {
     setSourcesLoading(true);
@@ -85,7 +99,7 @@ export function DebtPaymentDialog({
           balance = Number(row.amount ?? row.balance ?? 0) || 0;
         }
         const label = row.name ?? row.phone ?? row.number ?? row.line ?? d.id;
-        return { id: d.id, label: String(label), balance };
+        return { id: d.id, label: String(label), balance, row };
       });
       setSources(list);
       if (list.length > 0 && !list.find((s) => s.id === sourceId)) {
@@ -285,18 +299,63 @@ export function DebtPaymentDialog({
               </div>
 
               {selectedSource && amtValid ? (
-                <div className="rounded-md border border-border bg-background px-3 py-2 text-xs">
-                  <span className="text-muted-foreground">الرصيد الحالي: </span>
-                  <span className="font-mono tabular-nums">{selectedSource.balance.toFixed(2)}</span>
-                  {!exceedsSourceBalance ? (
-                    <>
-                      <span className="mx-1 text-muted-foreground">→</span>
-                      <span className="font-mono tabular-nums">
-                        {(selectedSource.balance - amt).toFixed(2)}
-                      </span>
-                    </>
+                <>
+                  <div className="rounded-md border border-border bg-background px-3 py-2 text-xs">
+                    <span className="text-muted-foreground">الرصيد الحالي: </span>
+                    <span className="font-mono tabular-nums">{selectedSource.balance.toFixed(2)}</span>
+                    {!exceedsSourceBalance ? (
+                      <>
+                        <span className="mx-1 text-muted-foreground">→</span>
+                        <span className="font-mono tabular-nums">
+                          {(selectedSource.balance - amt).toFixed(2)}
+                        </span>
+                      </>
+                    ) : null}
+                  </div>
+                  {lineLimitPreview && sourceKind !== SOURCE_KIND.MACHINE ? (
+                    <div className="rounded-md border border-border bg-background px-3 py-2 text-xs space-y-1">
+                      <p className="font-medium text-foreground">الليميت على الخط</p>
+                      <div className="grid gap-1 sm:grid-cols-2">
+                        <div>
+                          <p className="text-muted-foreground">
+                            سحب يومي: {lineLimitPreview.remDailyWithdraw > 0 ? lineLimitPreview.remDailyWithdraw.toFixed(2) : "غير مفعّل"}
+                          </p>
+                          {lineLimitPreview.remDailyWithdraw > 0 ? (
+                            <p className="text-muted-foreground">
+                              بعد السداد: {Math.max(0, lineLimitPreview.remDailyWithdraw - lineLimitPreview.previewDelta).toFixed(2)}
+                            </p>
+                          ) : null}
+                          <p className="text-muted-foreground">
+                            سحب شهري: {lineLimitPreview.remMonthlyWithdraw > 0 ? lineLimitPreview.remMonthlyWithdraw.toFixed(2) : "غير مفعّل"}
+                          </p>
+                          {lineLimitPreview.remMonthlyWithdraw > 0 ? (
+                            <p className="text-muted-foreground">
+                              بعد السداد: {Math.max(0, lineLimitPreview.remMonthlyWithdraw - lineLimitPreview.previewDelta).toFixed(2)}
+                            </p>
+                          ) : null}
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground">
+                            إيداع يومي: {lineLimitPreview.remDailyDeposit > 0 ? lineLimitPreview.remDailyDeposit.toFixed(2) : "غير مفعّل"}
+                          </p>
+                          {lineLimitPreview.remDailyDeposit > 0 ? (
+                            <p className="text-muted-foreground">
+                              بعد السداد: {Math.max(0, lineLimitPreview.remDailyDeposit + lineLimitPreview.previewDelta).toFixed(2)}
+                            </p>
+                          ) : null}
+                          <p className="text-muted-foreground">
+                            إيداع شهري: {lineLimitPreview.remMonthlyDeposit > 0 ? lineLimitPreview.remMonthlyDeposit.toFixed(2) : "غير مفعّل"}
+                          </p>
+                          {lineLimitPreview.remMonthlyDeposit > 0 ? (
+                            <p className="text-muted-foreground">
+                              بعد السداد: {Math.max(0, lineLimitPreview.remMonthlyDeposit + lineLimitPreview.previewDelta).toFixed(2)}
+                            </p>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
                   ) : null}
-                </div>
+                </>
               ) : null}
             </div>
           ) : null}

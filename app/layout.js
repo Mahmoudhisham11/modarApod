@@ -27,7 +27,58 @@ export const metadata = {
     default: "مدار",
     template: "%s | مدار",
   },
-  description: "نظام إداري لمحلات خدمات الدفع الإلكتروني والفروع والخطوط والتقارير.",
+
+  description:
+    "نظام إداري لمحلات خدمات الدفع الإلكتروني والفروع والخطوط والتقارير.",
+
+  manifest: "/site.webmanifest",
+
+  applicationName: "مدار",
+
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "مدار",
+  },
+
+  formatDetection: {
+    telephone: false,
+  },
+
+  icons: {
+    icon: [
+      {
+        url: "/favicon.ico",
+      },
+      {
+        url: "/favicon.svg",
+        type: "image/svg+xml",
+      },
+      {
+        url: "/favicon-96x96.png",
+        sizes: "96x96",
+        type: "image/png",
+      },
+    ],
+
+    apple: [
+      {
+        url: "/apple-touch-icon.png",
+        sizes: "180x180",
+        type: "image/png",
+      },
+    ],
+
+    shortcut: ["/favicon.ico"],
+  },
+};
+
+export const viewport = {
+  themeColor: "#ffffff",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
 };
 
 export default function RootLayout({ children }) {
@@ -36,8 +87,9 @@ export default function RootLayout({ children }) {
       lang="ar"
       dir="rtl"
       className={`${inter.variable} ${notoSansArabic.variable} ${jetbrainsMono.variable}`}
+      suppressHydrationWarning
     >
-      <body className="min-h-screen antialiased">
+      <body className="min-h-screen antialiased bg-background text-foreground">
         <AppProviders>{children}</AppProviders>
       </body>
     </html>
