@@ -24,6 +24,7 @@ import {
   isMachineDebitOperation,
   operationTypesForSourceKind,
 } from "@/lib/operations/constants";
+import { DollarSign, Globe } from "lucide-react";
 import {
   analyzeOperation,
   formatRankingMarginDisplay,
@@ -117,12 +118,14 @@ function applyOperationToCache(kind, cache, sourceId, opType, amount, commission
       }
     } else {
       const bal = parseLineAmount(row);
-      if (opType === OPERATION_TYPE.WITHDRAW) {
+      if (opType === OPERATION_TYPE.WITHDRAW || opType === OPERATION_TYPE.LIQUIDATION || opType === OPERATION_TYPE.EXTERNAL) {
         row.amount = bal + amount;
-        const dw = Number(row.dailyWithdraw) || 0;
-        if (dw > 0) row.dailyWithdraw = Math.max(0, dw - amount);
-        const wm = Number(row.withdrawLimit) || 0;
-        if (wm > 0) row.withdrawLimit = Math.max(0, wm - amount);
+        if (opType === OPERATION_TYPE.WITHDRAW) {
+          const dw = Number(row.dailyWithdraw) || 0;
+          if (dw > 0) row.dailyWithdraw = Math.max(0, dw - amount);
+          const wm = Number(row.withdrawLimit) || 0;
+          if (wm > 0) row.withdrawLimit = Math.max(0, wm - amount);
+        }
       } else if (opType === OPERATION_TYPE.DEPOSIT) {
         row.amount = bal - amount;
         const dd = Number(row.dailyDeposit) || 0;
@@ -364,6 +367,29 @@ export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = tr
                 {allowedTypes.map((t) => (<SelectItem key={t} value={t}>{OPERATION_TYPE_LABEL[t]}</SelectItem>))}
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant={effectiveOperationType === OPERATION_TYPE.LIQUIDATION ? "default" : "outline"}
+              className={cn("gap-1.5", effectiveOperationType === OPERATION_TYPE.LIQUIDATION && "pointer-events-none")}
+              onClick={() => setOperationType(OPERATION_TYPE.LIQUIDATION)}
+            >
+              <DollarSign className="h-3.5 w-3.5" />
+              تسيل أموال
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={effectiveOperationType === OPERATION_TYPE.EXTERNAL ? "default" : "outline"}
+              className={cn("gap-1.5", effectiveOperationType === OPERATION_TYPE.EXTERNAL && "pointer-events-none")}
+              onClick={() => setOperationType(OPERATION_TYPE.EXTERNAL)}
+            >
+              <Globe className="h-3.5 w-3.5" />
+              معاملة خارجية
+            </Button>
           </div>
 
           {effectiveOperationType === OPERATION_TYPE.BALANCE_TRANSFER && sourceKind === SOURCE_KIND.MACHINE ? (

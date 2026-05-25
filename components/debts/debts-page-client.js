@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CalendarDays, HandCoins, ImageIcon, Plus, Search, Trash2, X } from "lucide-react";
+import { CalendarDays, HandCoins, ImageIcon, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { useFeatureLock } from "@/hooks/use-feature-lock";
@@ -38,6 +38,7 @@ export function DebtsPageClient({ shop, userEmail }) {
   const [deleteTarget, setDeleteTarget] = useState(/** @type {{ id: string; imageUrl?: string } | null} */ (null));
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [previewImage, setPreviewImage] = useState(/** @type {string | null} */ (null));
+  const [editDebt, setEditDebt] = useState(/** @type {Record<string, unknown> | null} */ (null));
 
   const loadDebts = useCallback(async () => {
     const { fetchDebtsByShop } = await import("@/lib/debts/debts-service");
@@ -164,6 +165,17 @@ export function DebtsPageClient({ shop, userEmail }) {
                 <Plus className="h-4 w-4" />
                 دين جديد
               </Button>
+            </AddDebtDialog>
+            <AddDebtDialog
+              shop={shop}
+              userEmail={userEmail}
+              mode="edit"
+              initialData={editDebt}
+              onDebtUpdated={() => { setEditDebt(null); void loadDebts(); }}
+              open={editDebt !== null}
+              onOpenChange={(o) => { if (!o) setEditDebt(null); }}
+            >
+              <span />
             </AddDebtDialog>
           </div>
         </CardHeader>
@@ -305,6 +317,13 @@ export function DebtsPageClient({ shop, userEmail }) {
                               التقارير
                             </Button>
                           </DebtReportDialog>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setEditDebt(debt)}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
                           <Button
                             variant="ghost"
                             size="sm"

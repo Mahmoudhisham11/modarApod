@@ -32,12 +32,19 @@ import { cn } from "@/lib/utils";
  * @param {{
  *   shop: string;
  *   userEmail: string;
- *   onDebtCreated: () => void;
+ *   onDebtCreated?: () => void;
  *   children: import("react").ReactNode;
+ *   mode?: "create" | "edit";
+ *   initialData?: Record<string, unknown> | null;
+ *   onDebtUpdated?: () => void;
+ *   open?: boolean;
+ *   onOpenChange?: (open: boolean) => void;
  * }} props
  */
-export function AddDebtDialog({ shop, userEmail, onDebtCreated, children }) {
-  const [open, setOpen] = useState(false);
+export function AddDebtDialog({ shop, userEmail, onDebtCreated, children, mode = "create", initialData, onDebtUpdated, open: externalOpen, onOpenChange: externalOnOpenChange }) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = externalOpen !== undefined ? externalOpen : internalOpen;
+  const setOpen = externalOnOpenChange || setInternalOpen;
   const [customerName, setCustomerName] = useState("");
   const [amount, setAmount] = useState("");
   const [type, setType] = useState("ليك");
@@ -53,6 +60,21 @@ export function AddDebtDialog({ shop, userEmail, onDebtCreated, children }) {
   const [sourcesLoading, setSourcesLoading] = useState(false);
   const cameraRef = useRef(/** @type {HTMLInputElement | null} */ (null));
   const fileRef = useRef(/** @type {HTMLInputElement | null} */ (null));
+
+  const isEdit = mode === "edit" && initialData;
+
+  useEffect(() => {
+    if (open && isEdit && initialData) {
+      setCustomerName(String(initialData.customerName ?? ""));
+      setAmount(String(initialData.amount ?? ""));
+      setType(initialData.type === "عليك" ? "عليك" : "ليك");
+      setNote(String(initialData.note ?? ""));
+      setDueDate(String(initialData.dueDate ?? ""));
+      setImagePreview(String(initialData.imageUrl ?? ""));
+    } else if (open && !isEdit) {
+      reset();
+    }
+  }, [open, mode]);
 
   const amt = Number(amount);
   const amtValid = Number.isFinite(amt) && amt > 0;
@@ -132,39 +154,54 @@ export function AddDebtDialog({ shop, userEmail, onDebtCreated, children }) {
       toast.error("أدخل اسم العميل.");
       return;
     }
-    if (!amtValid) {
+    if (!isEdit && !amtValid) {
       toast.error("أدخل مبلغًا صحيحًا أكبر من صفر.");
       return;
     }
-    if (paymentMethod === "wallet" && !sourceId) {
+    if (!isEdit && paymentMethod === "wallet" && !sourceId) {
       toast.error("اختر الوسيلة.");
       return;
     }
     setBusy(true);
     try {
-      let imageUrl = "";
+      let imageUrl = String(initialData?.imageUrl ?? "");
       if (imageFile) {
         const { uploadToCloudinary } = await import("@/lib/cloudinary/upload");
         imageUrl = await uploadToCloudinary(imageFile);
       }
-      const { createDebt } = await import("@/lib/debts/debts-service");
-      await createDebt({
-        customerName: name,
-        amount: amt,
-        type: /** @type {"ليك" | "عليك"} */ (type),
-        shop: shop.trim(),
-        createdBy: userEmail,
-        note: note.trim(),
-        imageUrl,
-        dueDate: dueDate.trim(),
-        paymentMethod: paymentMethod || undefined,
-        sourceId: paymentMethod === "wallet" ? sourceId : undefined,
-        sourceKind: paymentMethod === "wallet" ? sourceKind : undefined,
-      });
-      toast.success("تم تسجيل الدين بنجاح.");
-      setOpen(false);
-      reset();
-      onDebtCreated();
+
+      if (isEdit && initialData?.id) {
+        const { updateDebt } = await import("@/lib/debts/debts-service");
+        await updateDebt(String(initialData.id), {
+          customerName: name,
+          note: note.trim(),
+          dueDate: dueDate.trim(),
+          imageUrl,
+        });
+        toast.success("تم تحديث الدين بنجاح.");
+        setOpen(false);
+        reset();
+        onDebtUpdated?.();
+      } else {
+        const { createDebt } = await import("@/lib/debts/debts-service");
+        await createDebt({
+          customerName: name,
+          amount: amt,
+          type: /** @type {"ليك" | "عليك"} */ (type),
+          shop: shop.trim(),
+          createdBy: userEmail,
+          note: note.trim(),
+          imageUrl,
+          dueDate: dueDate.trim(),
+          paymentMethod: paymentMethod || undefined,
+          sourceId: paymentMethod === "wallet" ? sourceId : undefined,
+          sourceKind: paymentMethod === "wallet" ? sourceKind : undefined,
+        });
+        toast.success("تم تسجيل الدين بنجاح.");
+        setOpen(false);
+        reset();
+        onDebtCreated?.();
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : "حدث خطأ";
       toast.error(msg);
@@ -180,9 +217,11 @@ export function AddDebtDialog({ shop, userEmail, onDebtCreated, children }) {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <HandCoins className="h-5 w-5" aria-hidden />
-            دين جديد
+            {isEdit ? "تعديل الدين" : "دين جديد"}
           </DialogTitle>
-          <DialogDescription>سجل دينًا جديدًا على عميل.</DialogDescription>
+          <DialogDescription>
+            {isEdit ? "عدّل بيانات الدين." : "سجل دينًا جديدًا على عميل."}
+          </DialogDescription>
         </DialogHeader>
 
         <div className="max-h-[75vh] space-y-4 overflow-y-auto px-1">
@@ -196,20 +235,23 @@ export function AddDebtDialog({ shop, userEmail, onDebtCreated, children }) {
             />
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="debt-amount">المبلغ</Label>
-            <Input
-              id="debt-amount"
-              type="number"
-              step="0.01"
-              min="0"
-              placeholder="0.00"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              dir="ltr"
-            />
-          </div>
+          {!isEdit ? (
+            <div className="space-y-2">
+              <Label htmlFor="debt-amount">المبلغ</Label>
+              <Input
+                id="debt-amount"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="0.00"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                dir="ltr"
+              />
+            </div>
+          ) : null}
 
+          {!isEdit ? (
           <div className="space-y-2">
             <Label>نوع الدين</Label>
             <div className="flex gap-2">
@@ -241,8 +283,10 @@ export function AddDebtDialog({ shop, userEmail, onDebtCreated, children }) {
               </button>
             </div>
           </div>
+          ) : null}
 
           {/* Payment method */}
+          {!isEdit ? (
           <div className="space-y-2">
             <Label>طريقة الدفع (اختياري)</Label>
             <div className="flex gap-2">
@@ -339,6 +383,7 @@ export function AddDebtDialog({ shop, userEmail, onDebtCreated, children }) {
               </div>
             ) : null}
           </div>
+          ) : null}
 
           {/* Due date */}
           <div className="space-y-2">
@@ -426,7 +471,7 @@ export function AddDebtDialog({ shop, userEmail, onDebtCreated, children }) {
             إلغاء
           </Button>
           <Button type="button" disabled={busy} onClick={() => void handleSubmit()}>
-            {busy ? "جاري التسجيل…" : "تسجيل الدين"}
+            {busy ? "جاري الحفظ…" : isEdit ? "حفظ التعديلات" : "تسجيل الدين"}
           </Button>
         </DialogFooter>
       </DialogContent>
