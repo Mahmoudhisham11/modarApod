@@ -43,6 +43,7 @@ import { closeDayOperations, deleteOperationWithReversal } from "@/lib/operation
 
 import { OperationMobileCards } from "./operation-mobile-cards";
 import { useShopOperations } from "./use-shop-operations";
+import { invalidateSourcesCache } from "@/lib/sources/sources-cache";
 
 const FILTER_ALL = "__all__";
 
@@ -559,7 +560,7 @@ export function DashboardPageClient({ shop, branchLabel, userEmail, userName = "
             showTitle={false}
             commissionPercentWithdraw={userLocks?.commissionPercentWithdraw}
             commissionPercentDeposit={userLocks?.commissionPercentDeposit}
-            onSuccess={() => { setShowNewOperation(false); reload(); }}
+            onSuccess={() => { setShowNewOperation(false); invalidateSourcesCache(shop); reload(); void loadCapital(); }}
           />
         </DialogContent>
       </Dialog>

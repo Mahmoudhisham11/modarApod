@@ -252,8 +252,17 @@ export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = tr
 
     const snap = getLineLimitUsageSnapshot({ sourceKind, sourceRow: selectedItem.row, sourceId, operations: [], now: new Date() });
     if (!snap) return null;
+    const lineBalance = parseLineAmount(selectedItem.row);
+    let afterLineBalance = lineBalance;
+    if (effectiveOperationType === OPERATION_TYPE.WITHDRAW || effectiveOperationType === OPERATION_TYPE.LIQUIDATION || effectiveOperationType === OPERATION_TYPE.EXTERNAL) {
+      afterLineBalance = Math.max(0, lineBalance + a);
+    } else if (effectiveOperationType === OPERATION_TYPE.DEPOSIT) {
+      afterLineBalance = Math.max(0, lineBalance - a);
+    }
     return {
       kind: "line",
+      balance: lineBalance,
+      afterBalance: afterLineBalance,
       remDailyWithdraw: snap.remDailyWithdraw,
       remMonthlyWithdraw: snap.remMonthlyWithdraw,
       remDailyDeposit: snap.remDailyDeposit,
@@ -269,8 +278,9 @@ export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = tr
 
   const selectedSourceIsSuitable = useMemo(() => {
     if (!sourceId || amountNum <= 0) return true;
+    if (effectiveOperationType === OPERATION_TYPE.EXTERNAL) return true;
     return suitableSources.some((s) => s.id === sourceId);
-  }, [sourceId, amountNum, suitableSources]);
+  }, [sourceId, amountNum, suitableSources, effectiveOperationType]);
 
   const resetForm = useCallback(() => {
     setAmount("");
@@ -492,7 +502,16 @@ export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = tr
                 </>
               ) : (
                 <>
-                  <p className="font-medium text-foreground">الليميت على الخط (من مستند الوسيلة)</p>
+                  <p className="font-medium text-foreground">رصيد الخط</p>
+                  <p className="text-muted-foreground">
+                    الرصيد الحالي: <span className="font-mono">{fmtLimitNum(lineLimitPreview.balance)}</span>
+                  </p>
+                  {lineLimitPreview.previewDelta > 0 ? (
+                    <p className="text-muted-foreground">
+                      بعد التنفيذ: <span className="font-mono">{fmtLimitNum(lineLimitPreview.afterBalance)}</span>
+                    </p>
+                  ) : null}
+                  <p className="font-medium text-foreground mt-2">الليميت على الخط (من مستند الوسيلة)</p>
                   <div className="grid gap-2 sm:grid-cols-2">
                     <div className="space-y-1">
                       <p className="text-xs font-medium text-muted-foreground">السحب</p>
