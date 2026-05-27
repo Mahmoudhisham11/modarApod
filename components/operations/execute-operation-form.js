@@ -118,14 +118,20 @@ function applyOperationToCache(kind, cache, sourceId, opType, amount, commission
       }
     } else {
       const bal = parseLineAmount(row);
-      if (opType === OPERATION_TYPE.WITHDRAW || opType === OPERATION_TYPE.LIQUIDATION || opType === OPERATION_TYPE.EXTERNAL) {
+      if (opType === OPERATION_TYPE.WITHDRAW) {
         row.amount = bal + amount;
-        if (opType === OPERATION_TYPE.WITHDRAW) {
-          const dw = Number(row.dailyWithdraw) || 0;
-          if (dw > 0) row.dailyWithdraw = Math.max(0, dw - amount);
-          const wm = Number(row.withdrawLimit) || 0;
-          if (wm > 0) row.withdrawLimit = Math.max(0, wm - amount);
-        }
+        const dw = Number(row.dailyWithdraw) || 0;
+        if (dw > 0) row.dailyWithdraw = Math.max(0, dw - amount);
+        const wm = Number(row.withdrawLimit) || 0;
+        if (wm > 0) row.withdrawLimit = Math.max(0, wm - amount);
+      } else if (opType === OPERATION_TYPE.LIQUIDATION) {
+        row.amount = bal - amount;
+        const dw = Number(row.dailyWithdraw) || 0;
+        if (dw > 0) row.dailyWithdraw = Math.max(0, dw - amount);
+        const wm = Number(row.withdrawLimit) || 0;
+        if (wm > 0) row.withdrawLimit = Math.max(0, wm - amount);
+      } else if (opType === OPERATION_TYPE.EXTERNAL) {
+        // EXTERNAL: لا يؤثر على رصيد الوسيلة ولا النقدي
       } else if (opType === OPERATION_TYPE.DEPOSIT) {
         row.amount = bal - amount;
         const dd = Number(row.dailyDeposit) || 0;
