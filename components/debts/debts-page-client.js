@@ -35,7 +35,7 @@ export function DebtsPageClient({ shop, userEmail }) {
   const [debts, setDebts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [deleteTarget, setDeleteTarget] = useState(/** @type {{ id: string; imageUrl?: string } | null} */ (null));
+  const [deleteTarget, setDeleteTarget] = useState(/** @type {Record<string, unknown> | null} */ (null));
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [previewImage, setPreviewImage] = useState(/** @type {string | null} */ (null));
   const [editDebt, setEditDebt] = useState(/** @type {Record<string, unknown> | null} */ (null));
@@ -209,13 +209,14 @@ export function DebtsPageClient({ shop, userEmail }) {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-16">صورة</TableHead>
                   <TableHead>العميل</TableHead>
                   <TableHead>النوع</TableHead>
                   <TableHead>المبلغ</TableHead>
                   <TableHead>المتبقي</TableHead>
                   <TableHead>ملاحظات</TableHead>
-                  <TableHead className="w-16">صورة</TableHead>
                   <TableHead className="w-32">موعد السداد</TableHead>
+                  <TableHead className="w-36">تاريخ الدين</TableHead>
                   <TableHead className="w-28" />
                 </TableRow>
               </TableHeader>
@@ -223,8 +224,30 @@ export function DebtsPageClient({ shop, userEmail }) {
                 {filtered.map((debt) => {
                   const remaining = debt.remaining ?? debt.amount;
                   const isFullyPaid = remaining <= 0;
+                  const createdAtDate = debt.createdAt && typeof debt.createdAt === "object" && "seconds" in debt.createdAt
+                    ? new Date(Number(debt.createdAt.seconds) * 1000)
+                    : null;
                   return (
                     <TableRow key={debt.id} className={cn(isFullyPaid && "opacity-50")}>
+                      <TableCell>
+                        {debt.imageUrl ? (
+                          <button
+                            type="button"
+                            className="block overflow-hidden rounded-md border"
+                            onClick={() => setPreviewImage(/** @type {string} */ (debt.imageUrl))}
+                          >
+                            <img
+                              src={debt.imageUrl}
+                              alt=""
+                              className="h-10 w-10 object-cover"
+                            />
+                          </button>
+                        ) : (
+                          <span className="flex h-10 w-10 items-center justify-center rounded-md border border-dashed text-muted-foreground">
+                            <ImageIcon className="h-4 w-4" />
+                          </span>
+                        )}
+                      </TableCell>
                       <TableCell className="font-medium">
                         {debt.customerName ?? ""}
                       </TableCell>
@@ -252,25 +275,6 @@ export function DebtsPageClient({ shop, userEmail }) {
                       <TableCell className="max-w-[160px] truncate text-muted-foreground">
                         {debt.note ? debt.note : "—"}
                       </TableCell>
-                      <TableCell>
-                        {debt.imageUrl ? (
-                          <button
-                            type="button"
-                            className="block overflow-hidden rounded-md border"
-                            onClick={() => setPreviewImage(/** @type {string} */ (debt.imageUrl))}
-                          >
-                            <img
-                              src={debt.imageUrl}
-                              alt=""
-                              className="h-10 w-10 object-cover"
-                            />
-                          </button>
-                        ) : (
-                          <span className="flex h-10 w-10 items-center justify-center rounded-md border border-dashed text-muted-foreground">
-                            <ImageIcon className="h-4 w-4" />
-                          </span>
-                        )}
-                      </TableCell>
                       <TableCell className="text-nowrap">
                         {debt.dueDate ? (
                           (() => {
@@ -293,6 +297,11 @@ export function DebtsPageClient({ shop, userEmail }) {
                         ) : (
                           <span className="text-xs text-muted-foreground">—</span>
                         )}
+                      </TableCell>
+                      <TableCell className="text-nowrap text-xs text-muted-foreground">
+                        {createdAtDate && createdAtDate.getTime() > 0
+                          ? createdAtDate.toLocaleDateString("ar-EG", { year: "numeric", month: "short", day: "numeric" })
+                          : "—"}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">
@@ -328,7 +337,7 @@ export function DebtsPageClient({ shop, userEmail }) {
                             variant="ghost"
                             size="sm"
                             className="text-destructive hover:text-destructive"
-                            onClick={() => setDeleteTarget({ id: debt.id, imageUrl: debt.imageUrl })}
+                            onClick={() => setDeleteTarget(debt)}
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>

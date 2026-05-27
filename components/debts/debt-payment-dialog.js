@@ -63,7 +63,7 @@ export function DebtPaymentDialog({
   const amtValid = Number.isFinite(amt) && amt > 0;
   const exceedsRemaining = amtValid && amt > currentRemaining;
   const selectedSource = useMemo(() => sources.find((s) => s.id === sourceId), [sources, sourceId]);
-  const exceedsSourceBalance = selectedSource && amtValid && amt > selectedSource.balance;
+  const exceedsSourceBalance = debtType === "ليك" ? false : (selectedSource && amtValid && amt > selectedSource.balance);
 
   const lineLimitPreview = useMemo(() => {
     if (!selectedSource || !amtValid || sourceKind === SOURCE_KIND.MACHINE) return null;
@@ -229,11 +229,11 @@ export function DebtPaymentDialog({
                 محفظة
               </button>
             </div>
-            {paymentMethod === "cash" ? (
-              <p className="text-xs text-muted-foreground">
-                {debtType === "ليك" ? "سيتم إيداع المبلغ في النقدي (زيادة الرصيد)" : "سيتم خصم المبلغ من النقدي (نقص الرصيد)"}
-              </p>
-            ) : null}
+            <p className="text-xs text-muted-foreground">
+              {paymentMethod === "cash"
+                ? (debtType === "ليك" ? "سيتم إيداع المبلغ في النقدي (زيادة الرصيد)" : "سيتم خصم المبلغ من النقدي (نقص الرصيد)")
+                : (debtType === "ليك" ? "سيتم إيداع المبلغ في المحفظة (زيادة الرصيد)" : "سيتم خصم المبلغ من المحفظة (نقص الرصيد)")}
+            </p>
           </div>
 
           <div className="space-y-2">
@@ -307,7 +307,7 @@ export function DebtPaymentDialog({
                       <>
                         <span className="mx-1 text-muted-foreground">→</span>
                         <span className="font-mono tabular-nums">
-                          {(selectedSource.balance - amt).toFixed(2)}
+                          {(debtType === "ليك" ? selectedSource.balance + amt : selectedSource.balance - amt).toFixed(2)}
                         </span>
                       </>
                     ) : null}

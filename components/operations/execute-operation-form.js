@@ -159,6 +159,7 @@ export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = tr
   const [commission, setCommission] = useState("0");
   const [customerPhone, setCustomerPhone] = useState("+20");
   const [notes, setNotes] = useState("");
+  const [externalDirection, setExternalDirection] = useState("withdraw");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [commissionPercentWithdraw, setCommissionPercentWithdraw] = useState(propCommissionPercentWithdraw ?? 0);
@@ -277,44 +278,54 @@ export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = tr
     setCustomerPhone("+20");
     setNotes("");
     setTargetId("");
+    setExternalDirection("withdraw");
   }, []);
 
   const onSubmit = async (e) => {
     e.preventDefault();
     if (!shop.trim()) { toast.error("اسم الفرع غير مضبوط في الجلسة."); return; }
-    if (!sourceId) { toast.error("اختر الوسيلة."); return; }
-    if (!selectedItem) { toast.error("الوسيلة المختارة غير صالحة."); return; }
+    if (!sourceId.trim()) {
+      toast.error(effectiveOperationType === OPERATION_TYPE.EXTERNAL ? "أدخل رقم الوسيلة." : "اختر الوسيلة.");
+      return;
+    }
+    if (effectiveOperationType !== OPERATION_TYPE.EXTERNAL) {
+      if (!selectedItem) { toast.error("الوسيلة المختارة غير صالحة."); return; }
+      const gate = analyzeOperation({ sourceKind, sourceRow: selectedItem.row, sourceId, operationType: effectiveOperationType, amount: amountNum, commission: commissionNum, operations: [] });
+      if (!gate.executable) { toast.error(gate.messages[0] || "العملية غير مسموحة."); return; }
+    }
     if (effectiveOperationType === OPERATION_TYPE.BALANCE_TRANSFER && (!targetId || targetId === sourceId)) { toast.error("اختر ماكينة هدف صالحة."); return; }
-    const gate = analyzeOperation({ sourceKind, sourceRow: selectedItem.row, sourceId, operationType: effectiveOperationType, amount: amountNum, commission: commissionNum, operations: [] });
-    if (!gate.executable) { toast.error(gate.messages[0] || "العملية غير مسموحة."); return; }
     setSubmitting(true);
     try {
+      const finalSourceKind = effectiveOperationType === OPERATION_TYPE.EXTERNAL ? SOURCE_KIND.TELECOM : sourceKind;
       await createOperationWithUpdates({
         shop: shop.trim(),
         createdBy: userEmail.trim(),
         userName: userName.trim(),
-        sourceKind,
-        sourceId,
+        sourceKind: finalSourceKind,
+        sourceId: sourceId.trim(),
         operationType: effectiveOperationType,
         amount: amountNum,
         commission: commissionNum,
         customerPhone,
         notes,
         targetId: effectiveOperationType === OPERATION_TYPE.BALANCE_TRANSFER ? targetId : undefined,
+        externalDirection: effectiveOperationType === OPERATION_TYPE.EXTERNAL ? externalDirection : undefined,
       });
 
-      // Update cache locally instead of refetching
-      setAllSourcesCache((prev) => {
-        const updated = { ...prev };
-        const cacheKey = sourceKind;
-        if (updated[cacheKey]) {
-          updated[cacheKey] = applyOperationToCache(
-            sourceKind, updated[cacheKey], sourceId,
-            effectiveOperationType, amountNum, commissionNum, targetId,
-          );
-        }
-        return updated;
-      });
+      // Update cache locally instead of refetching (skip for external — no real source)
+      if (effectiveOperationType !== OPERATION_TYPE.EXTERNAL) {
+        setAllSourcesCache((prev) => {
+          const updated = { ...prev };
+          const cacheKey = sourceKind;
+          if (updated[cacheKey]) {
+            updated[cacheKey] = applyOperationToCache(
+              sourceKind, updated[cacheKey], sourceId,
+              effectiveOperationType, amountNum, commissionNum, targetId,
+            );
+          }
+          return updated;
+        });
+      }
 
       toast.success("تم تنفيذ العملية وتسجيلها.");
       resetForm();
@@ -329,44 +340,59 @@ export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = tr
       <Card className="border-border/60 shadow-[var(--shadow-card)]">
         {showTitle ? <CardHeader className="pb-2"><CardTitle>نموذج التنفيذ</CardTitle></CardHeader> : null}
         <CardContent className={cn("space-y-5", showTitle ? "" : "pt-6")}>
-          <div className="space-y-1.5">
-            <Label>نوع الوسيلة</Label>
-            <div className="flex flex-wrap gap-2">
-              {[SOURCE_KIND.TELECOM, SOURCE_KIND.INSTAPAY, SOURCE_KIND.MACHINE].map((k) => (
-                <Button
-                  key={k}
-                  type="button"
-                  size="sm"
-                  variant={sourceKind === k ? "default" : "outline"}
-                  className={cn("rounded-full", sourceKind === k && "pointer-events-none")}
-                  onClick={() => { setSourceKind(k); setSourceId(""); setTargetId(""); setOperationType(OPERATION_TYPE.WITHDRAW); }}
-                >
-                  {SOURCE_KIND_LABEL[k]}
-                </Button>
-              ))}
+          {effectiveOperationType !== OPERATION_TYPE.EXTERNAL ? (
+            <div className="space-y-1.5">
+              <Label>نوع الوسيلة</Label>
+              <div className="flex flex-wrap gap-2">
+                {[SOURCE_KIND.TELECOM, SOURCE_KIND.INSTAPAY, SOURCE_KIND.MACHINE].map((k) => (
+                  <Button
+                    key={k}
+                    type="button"
+                    size="sm"
+                    variant={sourceKind === k ? "default" : "outline"}
+                    className={cn("rounded-full", sourceKind === k && "pointer-events-none")}
+                    onClick={() => { setSourceKind(k); setSourceId(""); setTargetId(""); setOperationType(OPERATION_TYPE.WITHDRAW); }}
+                  >
+                    {SOURCE_KIND_LABEL[k]}
+                  </Button>
+                ))}
+              </div>
             </div>
-          </div>
+          ) : null}
 
-          <div className="space-y-1.5">
-            <Label htmlFor="op-source">الوسيلة</Label>
-            <Select value={sourceId || SELECT_NONE} onValueChange={(v) => setSourceId(v === SELECT_NONE ? "" : v)} disabled={loading || sources.length === 0}>
-              <SelectTrigger id="op-source"><SelectValue placeholder="اختر الوسيلة" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value={SELECT_NONE}>— اختر —</SelectItem>
-                {sources.map((item) => (<SelectItem key={item.id} value={item.id}>{sourceLabel(item, sourceKind)}</SelectItem>))}
-              </SelectContent>
-            </Select>
-            {!loading && sources.length === 0 ? <p className="text-xs text-muted-foreground">لا توجد وسائل لهذا النوع في هذا الفرع.</p> : null}
-          </div>
+          {effectiveOperationType === OPERATION_TYPE.EXTERNAL ? (
+            <div className="space-y-1.5">
+              <Label htmlFor="op-external-source">رقم الوسيلة</Label>
+              <Input id="op-external-source" value={sourceId} onChange={(ev) => setSourceId(ev.target.value)} dir="ltr" className="font-mono text-start" placeholder="أدخل الرقم" />
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              <Label htmlFor="op-source">الوسيلة</Label>
+              <Select value={sourceId || SELECT_NONE} onValueChange={(v) => setSourceId(v === SELECT_NONE ? "" : v)} disabled={loading || sources.length === 0}>
+                <SelectTrigger id="op-source"><SelectValue placeholder="اختر الوسيلة" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={SELECT_NONE}>— اختر —</SelectItem>
+                  {sources.map((item) => (<SelectItem key={item.id} value={item.id}>{sourceLabel(item, sourceKind)}</SelectItem>))}
+                </SelectContent>
+              </Select>
+              {!loading && sources.length === 0 ? <p className="text-xs text-muted-foreground">لا توجد وسائل لهذا النوع في هذا الفرع.</p> : null}
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <Label htmlFor="op-type">نوع العملية</Label>
-            <Select value={effectiveOperationType} onValueChange={(v) => setOperationType(v)}>
-              <SelectTrigger id="op-type"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {allowedTypes.map((t) => (<SelectItem key={t} value={t}>{OPERATION_TYPE_LABEL[t]}</SelectItem>))}
-              </SelectContent>
-            </Select>
+            {effectiveOperationType === OPERATION_TYPE.LIQUIDATION || effectiveOperationType === OPERATION_TYPE.EXTERNAL ? (
+              <div className="flex h-9 w-full items-center rounded-md border border-input bg-muted px-3 py-2 text-sm">
+                {OPERATION_TYPE_LABEL[effectiveOperationType]}
+              </div>
+            ) : (
+              <Select value={effectiveOperationType} onValueChange={(v) => setOperationType(v)}>
+                <SelectTrigger id="op-type"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {allowedTypes.filter((t) => t !== OPERATION_TYPE.LIQUIDATION && t !== OPERATION_TYPE.EXTERNAL).map((t) => (<SelectItem key={t} value={t}>{OPERATION_TYPE_LABEL[t]}</SelectItem>))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
 
           <div className="flex flex-wrap gap-2">
@@ -385,12 +411,38 @@ export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = tr
               size="sm"
               variant={effectiveOperationType === OPERATION_TYPE.EXTERNAL ? "default" : "outline"}
               className={cn("gap-1.5", effectiveOperationType === OPERATION_TYPE.EXTERNAL && "pointer-events-none")}
-              onClick={() => setOperationType(OPERATION_TYPE.EXTERNAL)}
+              onClick={() => { setOperationType(OPERATION_TYPE.EXTERNAL); setSourceId(""); setSourceKind(SOURCE_KIND.TELECOM); }}
             >
               <Globe className="h-3.5 w-3.5" />
               معاملة خارجية
             </Button>
           </div>
+
+          {effectiveOperationType === OPERATION_TYPE.EXTERNAL ? (
+            <div className="space-y-1.5">
+              <Label>اتجاه المعاملة</Label>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={externalDirection === "withdraw" ? "default" : "outline"}
+                  className={cn("rounded-full", externalDirection === "withdraw" && "pointer-events-none")}
+                  onClick={() => setExternalDirection("withdraw")}
+                >
+                  سحب
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={externalDirection === "deposit" ? "default" : "outline"}
+                  className={cn("rounded-full", externalDirection === "deposit" && "pointer-events-none")}
+                  onClick={() => setExternalDirection("deposit")}
+                >
+                  إيداع
+                </Button>
+              </div>
+            </div>
+          ) : null}
 
           {effectiveOperationType === OPERATION_TYPE.BALANCE_TRANSFER && sourceKind === SOURCE_KIND.MACHINE ? (
             <div className="space-y-1.5">
@@ -493,6 +545,7 @@ export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = tr
         </CardContent>
       </Card>
 
+      {effectiveOperationType !== OPERATION_TYPE.EXTERNAL ? (
       <Card className="border-border/60 shadow-[var(--shadow-card)]">
         <CardHeader className="pb-2">
           <CardTitle>ترشيح الوسائل المناسبة</CardTitle>
@@ -535,6 +588,7 @@ export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = tr
           )}
         </CardContent>
       </Card>
+      ) : null}
     </form>
   );
 }

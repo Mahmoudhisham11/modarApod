@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useFeatureLock } from "@/hooks/use-feature-lock";
 import { DollarSign, FileDown, FileSpreadsheet, Printer, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -35,6 +35,9 @@ import { ReportPeriodToolbar } from "./report-period-toolbar";
 import { ReportsListTable } from "./reports-list-table";
 import { useShopReports } from "./use-shop-reports";
 
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { fetchDebtPaymentsByShop } from "@/lib/debts/debts-service";
+
 /**
  * @param {{ shop: string; branchLabel: string; userEmail: string }} props
  */
@@ -49,6 +52,9 @@ export function ReportsPageClient({ shop, branchLabel, userEmail }) {
   const [capitalLoading, setCapitalLoading] = useState(true);
   const [deleteTarget, setDeleteTarget] = useState(/** @type {string | null} */ (null));
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const [debtPayments, setDebtPayments] = useState([]);
+  const [debtPaymentsLoading, setDebtPaymentsLoading] = useState(true);
+  const [debtPaymentsError, setDebtPaymentsError] = useState(/** @type {string | null} */ (null));
 
   const loadCapital = useCallback(async () => {
     const s = shop.trim();
@@ -77,12 +83,77 @@ export function ReportsPageClient({ shop, branchLabel, userEmail }) {
   const periodReports = useMemo(() => {
     return filterOperationsByPeriod(shopReports, {
       preset,
-      dateFrom: preset === "custom" ? dateFrom : undefined,
-      dateTo: preset === "custom" ? dateTo : undefined,
+      dateFrom: dateFrom || undefined,
+      dateTo: dateTo || undefined,
     });
   }, [shopReports, preset, dateFrom, dateTo]);
 
   const summary = useMemo(() => buildReportSummary(periodReports), [periodReports]);
+
+  const loadDebtPayments = useCallback(async () => {
+    const s = shop.trim();
+    if (!s) {
+      setDebtPayments([]);
+      setDebtPaymentsLoading(false);
+      return;
+    }
+    setDebtPaymentsLoading(true);
+    setDebtPaymentsError(null);
+    try {
+      const data = await fetchDebtPaymentsByShop(s);
+      setDebtPayments(data);
+    } catch (e) {
+      setDebtPayments([]);
+      setDebtPaymentsError(e instanceof Error ? e.message : "حدث خطأ في تحميل مدفوعات الديون");
+    } finally {
+      setDebtPaymentsLoading(false);
+    }
+  }, [shop]);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      void loadDebtPayments();
+    }, 0);
+    return () => window.clearTimeout(t);
+  }, [loadDebtPayments]);
+
+  const periodDebtPayments = useMemo(() => {
+    return filterOperationsByPeriod(debtPayments, {
+      preset,
+      dateFrom: dateFrom || undefined,
+      dateTo: dateTo || undefined,
+    });
+  }, [debtPayments, preset, dateFrom, dateTo]);
+
+  const debtSummary = useMemo(() => {
+    let totalAmount = 0;
+    let cashCount = 0;
+    let walletCount = 0;
+    let cashTotal = 0;
+    let walletTotal = 0;
+
+    for (const p of periodDebtPayments) {
+      const amt = Number(p.amount) || 0;
+      totalAmount += amt;
+      if (p.paymentMethod === "cash") {
+        cashCount += 1;
+        cashTotal += amt;
+      } else {
+        walletCount += 1;
+        walletTotal += amt;
+      }
+    }
+
+    return {
+      count: periodDebtPayments.length,
+      totalAmount,
+      cashCount,
+      cashTotal,
+      walletCount,
+      walletTotal,
+      avgAmount: periodDebtPayments.length > 0 ? totalAmount / periodDebtPayments.length : 0,
+    };
+  }, [periodDebtPayments]);
 
   const periodTitle = useMemo(
     () => periodLabelAr(preset, { dateFrom, dateTo }),
@@ -280,6 +351,85 @@ export function ReportsPageClient({ shop, branchLabel, userEmail }) {
           <ReportsListTable reports={periodReports} onDelete={setDeleteTarget} />
         </>
       )}
+
+      <Card className="border-border/60 shadow-[var(--shadow-card)]">
+        <CardHeader>
+          <CardTitle className="text-base font-medium">تقارير السداد</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {debtPaymentsError ? (
+            <p className="text-sm text-destructive">{debtPaymentsError}</p>
+          ) : debtPaymentsLoading ? (
+            <p className="text-sm text-muted-foreground">جاري التحميل…</p>
+          ) : periodDebtPayments.length === 0 ? (
+            <p className="text-sm text-muted-foreground">لا توجد مدفوعات ديون في الفترة المحددة.</p>
+          ) : (
+            <>
+              <div className="grid gap-4 sm:grid-cols-4">
+                <div className="rounded-lg border border-border bg-muted/30 px-4 py-3">
+                  <p className="text-xs text-muted-foreground">عدد المدفوعات</p>
+                  <p className="text-xl font-bold tabular-nums">{debtSummary.count}</p>
+                </div>
+                <div className="rounded-lg border border-border bg-muted/30 px-4 py-3">
+                  <p className="text-xs text-muted-foreground">إجمالي المدفوعات</p>
+                  <p className="text-xl font-bold tabular-nums">{debtSummary.totalAmount.toFixed(2)}</p>
+                </div>
+                <div className="rounded-lg border border-border bg-muted/30 px-4 py-3">
+                  <p className="text-xs text-muted-foreground">متوسط المدفوعات</p>
+                  <p className="text-xl font-bold tabular-nums">{debtSummary.avgAmount.toFixed(2)}</p>
+                </div>
+                <div className="rounded-lg border border-border bg-muted/30 px-4 py-3">
+                  <p className="text-xs text-muted-foreground">طريقة السداد</p>
+                  <p className="text-sm font-semibold">
+                    نقدي {debtSummary.cashCount} ({(debtSummary.totalAmount > 0 ? (debtSummary.cashTotal / debtSummary.totalAmount * 100) : 0).toFixed(0)}%)
+                    {" | "}
+                    محفظة {debtSummary.walletCount} ({(debtSummary.totalAmount > 0 ? (debtSummary.walletTotal / debtSummary.totalAmount * 100) : 0).toFixed(0)}%)
+                  </p>
+                </div>
+              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>التاريخ</TableHead>
+                    <TableHead>المبلغ</TableHead>
+                    <TableHead>طريقة السداد</TableHead>
+                    <TableHead>ملاحظات</TableHead>
+                    <TableHead>المسدد</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {periodDebtPayments.map((p) => {
+                    const ts = p.createdAt?.toDate?.() ?? new Date(p.createdAt);
+                    return (
+                      <TableRow key={p.id}>
+                        <TableCell className="text-nowrap">
+                          {ts.toLocaleDateString("ar-EG", {
+                            year: "numeric",
+                            month: "short",
+                            day: "numeric",
+                          })}
+                        </TableCell>
+                        <TableCell className="font-mono tabular-nums">
+                          {Number(p.amount).toFixed(2)}
+                        </TableCell>
+                        <TableCell>
+                          {p.paymentMethod === "cash" ? "نقدي" : "محفظة"}
+                        </TableCell>
+                        <TableCell className="max-w-[120px] truncate text-muted-foreground">
+                          {p.note ? p.note : "—"}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {p.createdBy ?? "—"}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </>
+          )}
+        </CardContent>
+      </Card>
 
       <Dialog open={deleteTarget !== null} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
         <DialogContent>

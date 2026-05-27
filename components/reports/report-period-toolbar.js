@@ -51,18 +51,16 @@ export function ReportPeriodToolbar({
           </button>
         ))}
       </div>
-      {preset === "custom" ? (
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="report-from">من تاريخ</Label>
-            <Input id="report-from" type="date" value={dateFrom} onChange={(e) => onDateFromChange(e.target.value)} />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="report-to">إلى تاريخ</Label>
-            <Input id="report-to" type="date" value={dateTo} onChange={(e) => onDateToChange(e.target.value)} />
-          </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label htmlFor="report-from">من تاريخ</Label>
+          <Input id="report-from" type="date" value={dateFrom} onChange={(e) => onDateFromChange(e.target.value)} />
         </div>
-      ) : null}
+        <div className="space-y-2">
+          <Label htmlFor="report-to">إلى تاريخ</Label>
+          <Input id="report-to" type="date" value={dateTo} onChange={(e) => onDateToChange(e.target.value)} />
+        </div>
+      </div>
     </div>
   );
 }
