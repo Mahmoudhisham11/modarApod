@@ -164,7 +164,9 @@ export function DashboardPageClient({ shop, branchLabel, userEmail, userName = "
     let sum = 0;
     for (const op of filteredOps) {
       const c = Number(op.commation ?? op.commission ?? 0);
+      const mc = Number(op.merchantCommission ?? 0);
       sum += Number.isFinite(c) ? c : 0;
+      sum += Number.isFinite(mc) ? mc : 0;
     }
     return Math.round(sum * 100) / 100;
   }, [filteredOps]);
@@ -560,6 +562,7 @@ export function DashboardPageClient({ shop, branchLabel, userEmail, userName = "
             showTitle={false}
             commissionPercentWithdraw={userLocks?.commissionPercentWithdraw}
             commissionPercentDeposit={userLocks?.commissionPercentDeposit}
+            merchantPercent={userLocks?.merchantPercent}
             onSuccess={() => { setShowNewOperation(false); invalidateSourcesCache(shop); reload(); void loadCapital(); }}
           />
         </DialogContent>

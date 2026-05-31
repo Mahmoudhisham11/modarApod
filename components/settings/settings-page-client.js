@@ -67,6 +67,7 @@ export function SettingsPageClient({ userEmail, shop }) {
   });
   const [commissionPercentWithdraw, setCommissionPercentWithdraw] = useState(0);
   const [commissionPercentDeposit, setCommissionPercentDeposit] = useState(0);
+  const [merchantPercent, setMerchantPercent] = useState(0);
   const [saving, setSaving] = useState(false);
 
   const [branchUsers, setBranchUsers] = useState(/** @type {Array<{ id: string; email: string; name: string }>} */ ([]));
@@ -82,6 +83,7 @@ export function SettingsPageClient({ userEmail, shop }) {
   });
   const [selectedUserCommissionWithdraw, setSelectedUserCommissionWithdraw] = useState(0);
   const [selectedUserCommissionDeposit, setSelectedUserCommissionDeposit] = useState(0);
+  const [selectedUserMerchantPercent, setSelectedUserMerchantPercent] = useState(0);
   const [selectedUserLoading, setSelectedUserLoading] = useState(false);
   const [savingUser, setSavingUser] = useState(false);
 
@@ -107,6 +109,7 @@ export function SettingsPageClient({ userEmail, shop }) {
       });
       setCommissionPercentWithdraw(data.commissionPercentWithdraw);
       setCommissionPercentDeposit(data.commissionPercentDeposit);
+      setMerchantPercent(data.merchantPercent);
       setLoading(false);
     })();
     return () => { cancelled = true; };
@@ -130,6 +133,7 @@ export function SettingsPageClient({ userEmail, shop }) {
       setSelectedUserLocks({ reports: false, numbers: false, money: false, cash: false, daily: false });
       setSelectedUserCommissionWithdraw(0);
       setSelectedUserCommissionDeposit(0);
+      setSelectedUserMerchantPercent(0);
       return;
     }
     let cancelled = false;
@@ -152,6 +156,7 @@ export function SettingsPageClient({ userEmail, shop }) {
           });
           setSelectedUserCommissionWithdraw(data.commissionPercentWithdraw);
           setSelectedUserCommissionDeposit(data.commissionPercentDeposit);
+          setSelectedUserMerchantPercent(data.merchantPercent);
         }
       } catch {
         if (!cancelled) toast.error("تعذّر تحميل صلاحيات المستخدم");
@@ -181,6 +186,7 @@ export function SettingsPageClient({ userEmail, shop }) {
         lockDebts: locks.debts,
         commissionPercentWithdraw,
         commissionPercentDeposit,
+        merchantPercent,
       });
       setHasPassword(true);
       setVerified(true);
@@ -213,6 +219,7 @@ export function SettingsPageClient({ userEmail, shop }) {
         lockDebts: locks.debts,
         commissionPercentWithdraw,
         commissionPercentDeposit,
+        merchantPercent,
       };
       if (newPassword.trim()) patch.lockPassword = newPassword.trim();
       await updateUserLocks(userDocId, patch);
@@ -235,6 +242,7 @@ export function SettingsPageClient({ userEmail, shop }) {
         lockDebts: selectedUserLocks.debts,
         commissionPercentWithdraw: selectedUserCommissionWithdraw,
         commissionPercentDeposit: selectedUserCommissionDeposit,
+        merchantPercent: selectedUserMerchantPercent,
       });
       toast.success("تم تحديث صلاحيات المستخدم");
     } catch { toast.error("تعذر الحفظ"); }
@@ -372,6 +380,34 @@ export function SettingsPageClient({ userEmail, shop }) {
                 </div>
               </div>
 
+              {/* Merchant percent */}
+              <div className="grid gap-4 border-t border-border pt-6 sm:grid-cols-2">
+                <div className="max-w-xs flex-1">
+                  <div className="space-y-2">
+                    <Label htmlFor="merchant-percent" className="text-sm font-medium">
+                      نسبة رسوم التجار (%)
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      تتحسب رسوم التجار تلقائي من النسبة دي. اترك 0 للتحكم اليدوي.
+                    </p>
+                    <div className="relative">
+                      <Input
+                        id="merchant-percent"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="100"
+                        dir="ltr"
+                        className="font-mono pe-8"
+                        value={merchantPercent || ""}
+                        onChange={(e) => setMerchantPercent(Number(e.target.value) || 0)}
+                      />
+                      <Percent className="pointer-events-none absolute end-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {/* New password + save */}
               <div className="flex flex-col gap-4 border-t border-border pt-6 sm:flex-row sm:items-end">
                 <div className="max-w-xs flex-1">
@@ -502,6 +538,30 @@ export function SettingsPageClient({ userEmail, shop }) {
                               className="font-mono pe-8"
                               value={selectedUserCommissionDeposit || ""}
                               onChange={(e) => setSelectedUserCommissionDeposit(Number(e.target.value) || 0)}
+                            />
+                            <Percent className="pointer-events-none absolute end-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4 border-t border-border pt-6 sm:grid-cols-2">
+                      <div className="max-w-xs flex-1">
+                        <div className="space-y-2">
+                          <Label htmlFor="user-merchant-percent" className="text-sm font-medium">
+                            نسبة رسوم التجار (%)
+                          </Label>
+                          <div className="relative">
+                            <Input
+                              id="user-merchant-percent"
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              max="100"
+                              dir="ltr"
+                              className="font-mono pe-8"
+                              value={selectedUserMerchantPercent || ""}
+                              onChange={(e) => setSelectedUserMerchantPercent(Number(e.target.value) || 0)}
                             />
                             <Percent className="pointer-events-none absolute end-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                           </div>

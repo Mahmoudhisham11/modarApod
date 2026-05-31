@@ -13,7 +13,8 @@ export function middleware(request) {
   if (pathname.startsWith("/api")) return NextResponse.next();
   if (pathname === "/login" || pathname === "/register") return NextResponse.next();
   if (pathname.startsWith("/_next")) return NextResponse.next();
-  if (/\.(ico|png|jpg|jpeg|svg|webp|gif|txt|xml|webmanifest)$/i.test(pathname)) {
+  if (pathname === "/firebase-messaging-sw.js") return NextResponse.next();
+  if (/\.(ico|png|jpg|jpeg|svg|webp|gif|js|txt|xml|webmanifest)$/i.test(pathname)) {
     return NextResponse.next();
   }
 

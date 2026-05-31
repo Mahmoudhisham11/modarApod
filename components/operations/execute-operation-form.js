@@ -154,15 +154,17 @@ function applyOperationToCache(kind, cache, sourceId, opType, amount, commission
  *   onSuccess?: () => void | Promise<void>;
  *   commissionPercentWithdraw?: number;
  *   commissionPercentDeposit?: number;
+ *   merchantPercent?: number;
  * }} props
  */
-export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = true, onSuccess, commissionPercentWithdraw: propCommissionPercentWithdraw, commissionPercentDeposit: propCommissionPercentDeposit }) {
+export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = true, onSuccess, commissionPercentWithdraw: propCommissionPercentWithdraw, commissionPercentDeposit: propCommissionPercentDeposit, merchantPercent: propMerchantPercent }) {
   const [sourceKind, setSourceKind] = useState(SOURCE_KIND.TELECOM);
   const [sourceId, setSourceId] = useState("");
   const [operationType, setOperationType] = useState(OPERATION_TYPE.WITHDRAW);
   const [targetId, setTargetId] = useState("");
   const [amount, setAmount] = useState("");
   const [commission, setCommission] = useState("0");
+  const [merchantCommission, setMerchantCommission] = useState("0");
   const [customerPhone, setCustomerPhone] = useState("+20");
   const [notes, setNotes] = useState("");
   const [externalDirection, setExternalDirection] = useState("withdraw");
@@ -170,11 +172,12 @@ export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = tr
   const [submitting, setSubmitting] = useState(false);
   const [commissionPercentWithdraw, setCommissionPercentWithdraw] = useState(propCommissionPercentWithdraw ?? 0);
   const [commissionPercentDeposit, setCommissionPercentDeposit] = useState(propCommissionPercentDeposit ?? 0);
+  const [merchantPercent, setMerchantPercent] = useState(propMerchantPercent ?? 0);
   const [allSourcesCache, setAllSourcesCache] = useState(/** @type {Record<string, Array<{ id: string; row: Record<string, unknown> }>>} */ ({}));
 
-  // Fetch commission percents from user doc if not provided as props
+  // Fetch commission percents and merchant percent from user doc if not provided as props
   useEffect(() => {
-    if (propCommissionPercentWithdraw !== undefined && propCommissionPercentDeposit !== undefined) return;
+    if (propCommissionPercentWithdraw !== undefined && propCommissionPercentDeposit !== undefined && propMerchantPercent !== undefined) return;
     let cancelled = false;
     (async () => {
       if (!userEmail) return;
@@ -184,10 +187,11 @@ export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = tr
       if (!cancelled) {
         if (propCommissionPercentWithdraw === undefined) setCommissionPercentWithdraw(data.commissionPercentWithdraw);
         if (propCommissionPercentDeposit === undefined) setCommissionPercentDeposit(data.commissionPercentDeposit);
+        if (propMerchantPercent === undefined) setMerchantPercent(data.merchantPercent);
       }
     })();
     return () => { cancelled = true; };
-  }, [userEmail, propCommissionPercentWithdraw, propCommissionPercentDeposit]);
+  }, [userEmail, propCommissionPercentWithdraw, propCommissionPercentDeposit, propMerchantPercent]);
 
   // Fetch all source types on mount (from module-level cache, 0 reads after first load)
   const loadAllSources = useCallback(async () => {
@@ -238,6 +242,17 @@ export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = tr
       }
     }
   }, [amount, effectiveOperationType, commissionPercentWithdraw, commissionPercentDeposit]);
+
+  // Auto-calculate merchant commission when amount or merchantPercent changes
+  useEffect(() => {
+    if (merchantPercent > 0 && amount) {
+      const amt = parseFiniteNumberOrZero(amount);
+      if (amt > 0) {
+        const computed = (amt * merchantPercent) / 100;
+        setMerchantCommission(String(computed));
+      }
+    }
+  }, [amount, merchantPercent]);
 
   const lineLimitPreview = useMemo(() => {
     if (!shop.trim() || !selectedItem || !sourceId) return null;
@@ -291,6 +306,7 @@ export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = tr
   const resetForm = useCallback(() => {
     setAmount("");
     setCommission("0");
+    setMerchantCommission("0");
     setCustomerPhone("+20");
     setNotes("");
     setTargetId("");
@@ -313,6 +329,7 @@ export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = tr
     setSubmitting(true);
     try {
       const finalSourceKind = effectiveOperationType === OPERATION_TYPE.EXTERNAL ? SOURCE_KIND.TELECOM : sourceKind;
+      const merchantComNum = parseFiniteNumberOrZero(merchantCommission);
       await createOperationWithUpdates({
         shop: shop.trim(),
         createdBy: userEmail.trim(),
@@ -322,6 +339,7 @@ export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = tr
         operationType: effectiveOperationType,
         amount: amountNum,
         commission: commissionNum,
+        merchantCommission: merchantComNum,
         customerPhone,
         notes,
         targetId: effectiveOperationType === OPERATION_TYPE.BALANCE_TRANSFER ? targetId : undefined,
@@ -482,6 +500,11 @@ export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = tr
               <Label htmlFor="op-commission">الرسوم</Label>
               <Input id="op-commission" dir="ltr" className="font-mono text-start" value={commission} onChange={(ev) => setCommission(ev.target.value)} placeholder="0" />
             </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="op-merchant-commission">رسوم التجار</Label>
+            <Input id="op-merchant-commission" dir="ltr" className="font-mono text-start" value={merchantCommission} onChange={(ev) => setMerchantCommission(ev.target.value)} placeholder="0" />
           </div>
 
           <div className="space-y-1.5">
