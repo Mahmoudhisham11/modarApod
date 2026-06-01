@@ -24,7 +24,7 @@ import {
   isMachineDebitOperation,
   operationTypesForSourceKind,
 } from "@/lib/operations/constants";
-import { DollarSign, Globe } from "lucide-react";
+import { DollarSign, Globe, HandCoins } from "lucide-react";
 import {
   analyzeOperation,
   formatRankingMarginDisplay,
@@ -97,9 +97,11 @@ function toastFirestoreError(err, hint) {
  * @param {number} amount
  * @param {number} commission
  * @param {string} [targetId]
+ * @param {number} [merchantCommission]
  * @returns {Array<{ id: string; row: Record<string, unknown> }>}
  */
-function applyOperationToCache(kind, cache, sourceId, opType, amount, commission, targetId) {
+function applyOperationToCache(kind, cache, sourceId, opType, amount, commission, targetId, merchantCommission) {
+  const effectiveCommission = opType === OPERATION_TYPE.MERCHANT ? 0 : commission;
   return cache.map((item) => {
     if (item.id !== sourceId && item.id !== targetId) return item;
     const row = { ...item.row };
@@ -109,16 +111,16 @@ function applyOperationToCache(kind, cache, sourceId, opType, amount, commission
       if (item.id === sourceId && opType === OPERATION_TYPE.DEPOSIT) {
         row.balance = bal + amount;
       } else if (item.id === sourceId && opType === OPERATION_TYPE.BALANCE_TRANSFER) {
-        row.balance = bal - amount - commission;
+        row.balance = bal - amount - effectiveCommission;
       } else if (item.id === sourceId) {
-        row.balance = bal - amount - commission;
+        row.balance = bal - amount - effectiveCommission;
       }
       if (item.id === targetId && opType === OPERATION_TYPE.BALANCE_TRANSFER) {
         row.balance = (parseMachineBalance(row)) + amount;
       }
     } else {
       const bal = parseLineAmount(row);
-      if (opType === OPERATION_TYPE.WITHDRAW) {
+      if (opType === OPERATION_TYPE.WITHDRAW || opType === OPERATION_TYPE.MERCHANT) {
         row.amount = bal + amount;
         const dw = Number(row.dailyWithdraw) || 0;
         if (dw > 0) row.dailyWithdraw = Math.max(0, dw - amount);
@@ -228,6 +230,7 @@ export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = tr
     [allowedTypes, operationType],
   );
   const selectedItem = useMemo(() => sources.find((x) => x.id === sourceId) ?? null, [sources, sourceId]);
+  const isMerchant = effectiveOperationType === OPERATION_TYPE.MERCHANT;
   const amountNum = parseFiniteNumberOrZero(amount);
   const commissionNum = parseFiniteNumberOrZero(commission);
 
@@ -275,7 +278,7 @@ export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = tr
     if (!snap) return null;
     const lineBalance = parseLineAmount(selectedItem.row);
     let afterLineBalance = lineBalance;
-    if (effectiveOperationType === OPERATION_TYPE.WITHDRAW || effectiveOperationType === OPERATION_TYPE.LIQUIDATION || effectiveOperationType === OPERATION_TYPE.EXTERNAL) {
+    if (effectiveOperationType === OPERATION_TYPE.WITHDRAW || effectiveOperationType === OPERATION_TYPE.LIQUIDATION || effectiveOperationType === OPERATION_TYPE.EXTERNAL || effectiveOperationType === OPERATION_TYPE.MERCHANT) {
       afterLineBalance = Math.max(0, lineBalance + a);
     } else if (effectiveOperationType === OPERATION_TYPE.DEPOSIT) {
       afterLineBalance = Math.max(0, lineBalance - a);
@@ -299,7 +302,7 @@ export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = tr
 
   const selectedSourceIsSuitable = useMemo(() => {
     if (!sourceId || amountNum <= 0) return true;
-    if (effectiveOperationType === OPERATION_TYPE.EXTERNAL) return true;
+    if (effectiveOperationType === OPERATION_TYPE.EXTERNAL || effectiveOperationType === OPERATION_TYPE.MERCHANT) return true;
     return suitableSources.some((s) => s.id === sourceId);
   }, [sourceId, amountNum, suitableSources, effectiveOperationType]);
 
@@ -320,7 +323,7 @@ export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = tr
       toast.error(effectiveOperationType === OPERATION_TYPE.EXTERNAL ? "أدخل رقم الوسيلة." : "اختر الوسيلة.");
       return;
     }
-    if (effectiveOperationType !== OPERATION_TYPE.EXTERNAL) {
+    if (effectiveOperationType !== OPERATION_TYPE.EXTERNAL && effectiveOperationType !== OPERATION_TYPE.MERCHANT) {
       if (!selectedItem) { toast.error("الوسيلة المختارة غير صالحة."); return; }
       const gate = analyzeOperation({ sourceKind, sourceRow: selectedItem.row, sourceId, operationType: effectiveOperationType, amount: amountNum, commission: commissionNum, operations: [] });
       if (!gate.executable) { toast.error(gate.messages[0] || "العملية غير مسموحة."); return; }
@@ -338,8 +341,8 @@ export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = tr
         sourceId: sourceId.trim(),
         operationType: effectiveOperationType,
         amount: amountNum,
-        commission: commissionNum,
-        merchantCommission: merchantComNum,
+        commission: isMerchant ? 0 : commissionNum,
+        merchantCommission: isMerchant ? merchantComNum : 0,
         customerPhone,
         notes,
         targetId: effectiveOperationType === OPERATION_TYPE.BALANCE_TRANSFER ? targetId : undefined,
@@ -354,7 +357,7 @@ export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = tr
           if (updated[cacheKey]) {
             updated[cacheKey] = applyOperationToCache(
               sourceKind, updated[cacheKey], sourceId,
-              effectiveOperationType, amountNum, commissionNum, targetId,
+              effectiveOperationType, amountNum, commissionNum, targetId, merchantComNum,
             );
           }
           return updated;
@@ -415,7 +418,7 @@ export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = tr
 
           <div className="space-y-1.5">
             <Label htmlFor="op-type">نوع العملية</Label>
-            {effectiveOperationType === OPERATION_TYPE.LIQUIDATION || effectiveOperationType === OPERATION_TYPE.EXTERNAL ? (
+            {effectiveOperationType === OPERATION_TYPE.LIQUIDATION || effectiveOperationType === OPERATION_TYPE.EXTERNAL || effectiveOperationType === OPERATION_TYPE.MERCHANT ? (
               <div className="flex h-9 w-full items-center rounded-md border border-input bg-muted px-3 py-2 text-sm">
                 {OPERATION_TYPE_LABEL[effectiveOperationType]}
               </div>
@@ -423,7 +426,7 @@ export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = tr
               <Select value={effectiveOperationType} onValueChange={(v) => setOperationType(v)}>
                 <SelectTrigger id="op-type"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {allowedTypes.filter((t) => t !== OPERATION_TYPE.LIQUIDATION && t !== OPERATION_TYPE.EXTERNAL).map((t) => (<SelectItem key={t} value={t}>{OPERATION_TYPE_LABEL[t]}</SelectItem>))}
+                  {allowedTypes.filter((t) => t !== OPERATION_TYPE.LIQUIDATION && t !== OPERATION_TYPE.EXTERNAL && t !== OPERATION_TYPE.MERCHANT).map((t) => (<SelectItem key={t} value={t}>{OPERATION_TYPE_LABEL[t]}</SelectItem>))}
                 </SelectContent>
               </Select>
             )}
@@ -449,6 +452,16 @@ export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = tr
             >
               <Globe className="h-3.5 w-3.5" />
               معاملة خارجية
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={effectiveOperationType === OPERATION_TYPE.MERCHANT ? "default" : "outline"}
+              className={cn("gap-1.5", effectiveOperationType === OPERATION_TYPE.MERCHANT && "pointer-events-none")}
+              onClick={() => setOperationType(OPERATION_TYPE.MERCHANT)}
+            >
+              <HandCoins className="h-3.5 w-3.5" />
+              عملية تاجر
             </Button>
           </div>
 
@@ -496,15 +509,17 @@ export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = tr
               <Label htmlFor="op-amount">المبلغ</Label>
               <Input id="op-amount" dir="ltr" className="font-mono text-start" value={amount} onChange={(ev) => setAmount(ev.target.value)} placeholder="0" />
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="op-commission">الرسوم</Label>
-              <Input id="op-commission" dir="ltr" className="font-mono text-start" value={commission} onChange={(ev) => setCommission(ev.target.value)} placeholder="0" />
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="op-merchant-commission">رسوم التجار</Label>
-            <Input id="op-merchant-commission" dir="ltr" className="font-mono text-start" value={merchantCommission} onChange={(ev) => setMerchantCommission(ev.target.value)} placeholder="0" />
+            {isMerchant ? (
+              <div className="space-y-1.5">
+                <Label htmlFor="op-merchant-commission">أرباح التجار</Label>
+                <Input id="op-merchant-commission" dir="ltr" className="font-mono text-start" value={merchantCommission} onChange={(ev) => setMerchantCommission(ev.target.value)} placeholder="0" />
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <Label htmlFor="op-commission">الأرباح</Label>
+                <Input id="op-commission" dir="ltr" className="font-mono text-start" value={commission} onChange={(ev) => setCommission(ev.target.value)} placeholder="0" />
+              </div>
+            )}
           </div>
 
           <div className="space-y-1.5">
@@ -609,12 +624,12 @@ export function ExecuteOperationForm({ shop, userEmail, userName, showTitle = tr
             <>
               {sourceId && !selectedSourceIsSuitable ? (
                 <p className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-destructive">
-                  الوسيلة المختارة حاليًا في الحقل «الوسيلة» غير ضمن الترشيحات لهذا المبلغ. اختر «اختيار» من القائمة أدناه أو غيّر المبلغ/الرسوم.
+                  الوسيلة المختارة حاليًا في الحقل «الوسيلة» غير ضمن الترشيحات لهذا المبلغ. اختر «اختيار» من القائمة أدناه أو غيّر المبلغ/الأرباح.
                 </p>
               ) : null}
               <p className="text-xs text-muted-foreground">
                 {sourceKind === SOURCE_KIND.MACHINE
-                  ? "الترتيب حسب الرصيد فقط (بعد خصم المبلغ والرسوم عند السحب/التحويل، أو رصيد أعلى بعد الإيداع)."
+                  ? "الترتيب حسب الرصيد فقط (بعد خصم المبلغ والأرباح عند السحب/التحويل، أو رصيد أعلى بعد الإيداع)."
                   : "الترتيب حسب أضيق هامش بين رصيد الخط ومتبقي الليميت اليومي/الشهري على المستند."}
               </p>
               <ol className="list-decimal space-y-3 pe-5 marker:text-muted-foreground">

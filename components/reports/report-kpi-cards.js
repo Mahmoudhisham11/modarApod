@@ -17,7 +17,7 @@ export function ReportKpiCards({ count, totalAmount, totalCommission, avgAmount,
   const items = [
     { title: "عدد التقارير", value: String(count), icon: ListOrdered },
     { title: "إجمالي المبالغ", value: totalAmount.toFixed(2), icon: Wallet },
-    { title: "إجمالي الرسوم", value: totalCommission.toFixed(2), icon: CircleDollarSign },
+    { title: "إجمالي الأرباح", value: totalCommission.toFixed(2), icon: CircleDollarSign },
     { title: "متوسط المبلغ", value: avgAmount.toFixed(2), icon: BarChart3 },
   ];
 

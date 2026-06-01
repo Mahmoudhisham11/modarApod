@@ -5,12 +5,11 @@ import { getSessionUser } from "@/lib/auth/get-session";
 export default async function SettingsPage() {
   const user = await getSessionUser();
   const userEmail = user?.email ?? "";
-  const shop = user?.branch ?? "";
 
   return (
     <>
       <PageHeader title="الإعدادات" />
-      <SettingsPageClient userEmail={userEmail} shop={shop} />
+      <SettingsPageClient userEmail={userEmail} />
     </>
   );
 }

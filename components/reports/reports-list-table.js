@@ -35,7 +35,7 @@ export function ReportsListTable({ reports, onDelete }) {
                     <TableHead>التاريخ</TableHead>
                     <TableHead>النوع</TableHead>
                     <TableHead>المبلغ</TableHead>
-                    <TableHead>الرسوم</TableHead>
+                    <TableHead>الأرباح</TableHead>
                     <TableHead>الهاتف</TableHead>
                     <TableHead>المستلم</TableHead>
                     <TableHead>المنفّذ</TableHead>

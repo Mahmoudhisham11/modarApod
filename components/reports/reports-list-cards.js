@@ -52,7 +52,7 @@ export function ReportsListCards({ reports, onDelete }) {
                 <p className="font-mono text-sm">{asString(row.phone) || "—"}</p>
                 <div className="flex flex-wrap gap-3 text-sm tabular-nums">
                   <span>مبلغ: {amt.toFixed(2)}</span>
-                  <span>الرسوم: {com.toFixed(2)}</span>
+                  <span>الأرباح: {com.toFixed(2)}</span>
                 </div>
                 {asString(row.receiver) ? (
                   <p className="text-xs text-muted-foreground">مستلم: {asString(row.receiver)}</p>
