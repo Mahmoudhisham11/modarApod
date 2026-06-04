@@ -1,15 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  ChevronDown,
   EyeOff,
   HandCoins,
-  Lock,
   LogIn,
+  Mail,
   MousePointerClick,
+  Pencil,
   Percent,
   ShieldCheck,
   Trash2,
+  User,
+  Users,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -19,7 +23,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  deleteUserDoc,
+  fetchUserByField,
   fetchUserDocByEmail,
+  fetchUsersByBranch,
+  updateUserFields,
   updateUserLocks,
   userLocksFromData,
 } from "@/lib/auth/user-locks";
@@ -34,16 +42,13 @@ const LOCK_ITEMS = [
 ];
 
 /**
- * @param {{ userEmail: string }} props
+ * @param {{ userEmail: string; userBranch: string }} props
  */
-export function SettingsPageClient({ userEmail }) {
+export function SettingsPageClient({ userEmail, userBranch }) {
   const [loading, setLoading] = useState(true);
-  const [userDocId, setUserDocId] = useState("");
-  const [hasPassword, setHasPassword] = useState(false);
-  const [verified, setVerified] = useState(false);
-  const [password, setPassword] = useState("");
-  const [passwordInput, setPasswordInput] = useState("");
-  const [newPassword, setNewPassword] = useState("");
+  const [users, setUsers] = useState([]);
+  const [selectedUserEmail, setSelectedUserEmail] = useState("");
+  const [selectedUserDocId, setSelectedUserDocId] = useState("");
   const [locks, setLocks] = useState({
     reports: false,
     numbers: false,
@@ -56,39 +61,68 @@ export function SettingsPageClient({ userEmail }) {
   const [commissionPercentDeposit, setCommissionPercentDeposit] = useState(0);
   const [saving, setSaving] = useState(false);
 
+  // User data editing state
+  const [editName, setEditName] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [editBranch, setEditBranch] = useState("");
+  const [editPassword, setEditPassword] = useState("");
+  const [savingUserData, setSavingUserData] = useState(false);
+
+  // Delete confirmation
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const loadUserData = useCallback(async (email) => {
+    const found = await fetchUserDocByEmail(email);
+    if (!found) return;
+    setSelectedUserDocId(found.id);
+    const data = userLocksFromData(found.data);
+    setLocks({
+      reports: data.lockReports,
+      numbers: data.lockNumbers,
+      money: data.lockMoney,
+      cash: data.lockCash,
+      daily: data.lockDaily,
+      debts: data.lockDebts,
+    });
+    setCommissionPercentWithdraw(data.commissionPercentWithdraw);
+    setCommissionPercentDeposit(data.commissionPercentDeposit);
+    setEditName(typeof found.data.name === "string" ? found.data.name : "");
+    setEditEmail(typeof found.data.email === "string" ? found.data.email : "");
+    setEditBranch(typeof found.data.shop === "string" ? found.data.shop : typeof found.data.branch === "string" ? found.data.branch : "");
+    setEditPassword("");
+    setConfirmDelete(false);
+  }, []);
+
+  // Load users from the same branch on mount
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const found = await fetchUserDocByEmail(userEmail);
+      const branchUsers = await fetchUsersByBranch(userBranch);
       if (cancelled) return;
-      if (!found) {
-        setLoading(false);
-        return;
+      setUsers(branchUsers);
+      const currentUser = branchUsers.find((u) => u.email === userEmail);
+      const target = currentUser || branchUsers[0];
+      if (target) {
+        setSelectedUserEmail(target.email);
+        await loadUserData(target.email);
       }
-      setUserDocId(found.id);
-      const data = userLocksFromData(found.data);
-      setHasPassword(Boolean(data.lockPassword));
-      setLocks({
-        reports: data.lockReports,
-        numbers: data.lockNumbers,
-        money: data.lockMoney,
-        cash: data.lockCash,
-        daily: data.lockDaily,
-        debts: data.lockDebts,
-      });
-      setCommissionPercentWithdraw(data.commissionPercentWithdraw);
-      setCommissionPercentDeposit(data.commissionPercentDeposit);
       setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [userEmail]);
+  }, [userBranch, userEmail, loadUserData]);
 
-  const handleFirstPassword = useCallback(async () => {
-    if (!userDocId || !password.trim()) { toast.error("أدخل كلمة المرور"); return; }
+  // When selected user changes, load their data
+  const handleUserChange = useCallback(async (email) => {
+    setSelectedUserEmail(email);
+    await loadUserData(email);
+  }, [loadUserData]);
+
+  const handleSaveLocks = useCallback(async () => {
+    if (!selectedUserDocId) return;
     setSaving(true);
     try {
-      await updateUserLocks(userDocId, {
-        lockPassword: password.trim(),
+      await updateUserLocks(selectedUserDocId, {
         lockReports: locks.reports,
         lockNumbers: locks.numbers,
         lockMoney: locks.money,
@@ -98,45 +132,73 @@ export function SettingsPageClient({ userEmail }) {
         commissionPercentWithdraw,
         commissionPercentDeposit,
       });
-      setHasPassword(true);
-      setVerified(true);
-      setPassword("");
-      toast.success("تم تعيين كلمة المرور");
+      toast.success("تم تحديث الصلاحيات");
     } catch { toast.error("تعذر الحفظ"); }
     finally { setSaving(false); }
-  }, [userDocId, password, locks, commissionPercentWithdraw, commissionPercentDeposit]);
+  }, [selectedUserDocId, locks, commissionPercentWithdraw, commissionPercentDeposit]);
 
-  const handleVerify = useCallback(() => {
-    if (passwordInput === "") { toast.error("أدخل كلمة المرور"); return; }
-    fetchUserDocByEmail(userEmail).then((found) => {
-      if (!found) return;
-      const data = userLocksFromData(found.data);
-      if (passwordInput === data.lockPassword) { setVerified(true); toast.success("تم التحقق"); }
-      else { toast.error("كلمة المرور غير صحيحة"); }
-    });
-  }, [userEmail, passwordInput]);
+  const handleSaveUserData = useCallback(async () => {
+    if (!selectedUserDocId) return;
+    if (!editName.trim()) { toast.error("الاسم مطلوب"); return; }
+    if (!editEmail.trim()) { toast.error("البريد الإلكتروني مطلوب"); return; }
 
-  const handleSaveLocks = useCallback(async () => {
-    if (!userDocId || !verified) return;
-    setSaving(true);
+    // Check if email is taken by another user
+    const emailMatch = await fetchUserByField("email", editEmail.trim().toLowerCase(), selectedUserDocId);
+    if (emailMatch) { toast.error("البريد الإلكتروني مستخدم من قبل مستخدم آخر"); return; }
+
+    // Check if name is taken by another user
+    const nameMatch = await fetchUserByField("name", editName.trim(), selectedUserDocId);
+    if (nameMatch) { toast.error("الاسم مستخدم من قبل مستخدم آخر"); return; }
+
+    setSavingUserData(true);
     try {
       const patch = {
-        lockReports: locks.reports,
-        lockNumbers: locks.numbers,
-        lockMoney: locks.money,
-        lockCash: locks.cash,
-        lockDaily: locks.daily,
-        lockDebts: locks.debts,
-        commissionPercentWithdraw,
-        commissionPercentDeposit,
+        name: editName.trim(),
+        email: editEmail.trim().toLowerCase(),
+        shop: editBranch.trim() || userBranch,
+        branch: editBranch.trim() || userBranch,
       };
-      if (newPassword.trim()) patch.lockPassword = newPassword.trim();
-      await updateUserLocks(userDocId, patch);
-      toast.success("تم تحديث الإعدادات");
-      if (newPassword.trim()) setNewPassword("");
+      if (editPassword.trim()) patch.password = editPassword.trim();
+      await updateUserFields(selectedUserDocId, patch);
+
+      // Refresh the users list
+      const branchUsers = await fetchUsersByBranch(userBranch);
+      setUsers(branchUsers);
+
+      toast.success("تم تحديث بيانات المستخدم");
+      setEditPassword("");
     } catch { toast.error("تعذر الحفظ"); }
-    finally { setSaving(false); }
-  }, [userDocId, verified, locks, commissionPercentWithdraw, commissionPercentDeposit, newPassword]);
+    finally { setSavingUserData(false); }
+  }, [selectedUserDocId, editName, editEmail, editBranch, editPassword, userBranch]);
+
+  const handleDeleteUser = useCallback(async () => {
+    if (!selectedUserDocId) return;
+    setDeleting(true);
+    try {
+      await deleteUserDoc(selectedUserDocId);
+      toast.success("تم حذف المستخدم");
+
+      // Refresh users list
+      const branchUsers = await fetchUsersByBranch(userBranch);
+      setUsers(branchUsers);
+
+      // Select another user
+      if (branchUsers.length > 0) {
+        const next = branchUsers[0];
+        setSelectedUserEmail(next.email);
+        await loadUserData(next.email);
+      } else {
+        setSelectedUserEmail("");
+        setSelectedUserDocId("");
+      }
+    } catch { toast.error("تعذر الحذف"); }
+    finally { setDeleting(false); setConfirmDelete(false); }
+  }, [selectedUserDocId, userBranch, loadUserData]);
+
+  const selectedUserName = useMemo(() => {
+    const u = users.find((u) => u.email === selectedUserEmail);
+    return u ? u.name : "";
+  }, [users, selectedUserEmail]);
 
   if (loading) {
     return (
@@ -149,65 +211,135 @@ export function SettingsPageClient({ userEmail }) {
   return (
     <div className="mt-6 space-y-8">
 
-      {/* ──────── كلمة المرور والأقفال ──────── */}
-      <Card className="border-border/60 shadow-[var(--shadow-card)]">
-        <CardHeader>
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <ShieldCheck className="h-5 w-5" />
-            </div>
-            <div>
-              <CardTitle className="text-lg">الأمان والصلاحيات</CardTitle>
-              <CardDescription>تحكم في صلاحيات حسابك</CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {!hasPassword ? (
-            <div className="max-w-md space-y-4">
-              <p className="text-sm text-muted-foreground">
-                قبل البدء، يجب تعيين كلمة مرور للأقفال. هذه الكلمة ستستخدم للتحقق من هويتك عند تغيير الصلاحيات.
-              </p>
-              <PasswordField
-                id="first-lock-password"
-                label="كلمة مرور الأقفال"
-                value={password}
-                onChange={setPassword}
-              />
-              <Button type="button" disabled={saving} onClick={handleFirstPassword}>
-                تعيين كلمة المرور
-              </Button>
-            </div>
-          ) : !verified ? (
-            <div className="max-w-md space-y-4">
-              <p className="text-sm text-muted-foreground">
-                أدخل كلمة مرور الأقفال للمتابعة وتعديل الصلاحيات.
-              </p>
-              <PasswordField
-                id="verify-lock-password"
-                label="كلمة مرور الأقفال"
-                value={passwordInput}
-                onChange={setPasswordInput}
-              />
-              <div className="flex gap-2">
-                <Button type="button" variant="secondary" onClick={handleVerify}>
-                  <Lock className="ms-1 h-4 w-4" /> تحقق
+      {/* ──────── User selector ──────── */}
+      <div className="max-w-md space-y-2">
+        <Label htmlFor="user-select" className="text-sm font-medium">اختر المستخدم</Label>
+        <div className="relative">
+          <Users className="pointer-events-none absolute end-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <select
+            id="user-select"
+            dir="rtl"
+            value={selectedUserEmail}
+            onChange={(e) => handleUserChange(e.target.value)}
+            className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 [appearance:none]"
+          >
+            {users.map((u) => (
+              <option key={u.id} value={u.email}>
+                {u.name} ({u.email})
+              </option>
+            ))}
+          </select>
+          <ChevronDown className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        </div>
+      </div>
+
+      {selectedUserEmail && (
+        <>
+          {/* ──────── بيانات المستخدم ──────── */}
+          <Card className="border-border/60 shadow-[var(--shadow-card)]">
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <User className="h-5 w-5" />
+                </div>
+                <div>
+                  <CardTitle className="text-lg">بيانات المستخدم</CardTitle>
+                  <CardDescription>تعديل بيانات المستخدم <strong>{selectedUserName}</strong></CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-name" className="text-sm font-medium">الاسم</Label>
+                  <div className="relative">
+                    <User className="pointer-events-none absolute end-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      id="edit-name"
+                      type="text"
+                      className="pe-10"
+                      dir="rtl"
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-email" className="text-sm font-medium">البريد الإلكتروني</Label>
+                  <div className="relative">
+                    <Mail className="pointer-events-none absolute end-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      id="edit-email"
+                      type="email"
+                      className="pe-10"
+                      dir="ltr"
+                      value={editEmail}
+                      onChange={(e) => setEditEmail(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-branch" className="text-sm font-medium">الفرع</Label>
+                  <div className="relative">
+                    <Users className="pointer-events-none absolute end-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      id="edit-branch"
+                      type="text"
+                      className="pe-10"
+                      dir="rtl"
+                      value={editBranch}
+                      onChange={(e) => setEditBranch(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-password" className="text-sm font-medium">كلمة المرور (اتركها فارغة إن لم ترد التغيير)</Label>
+                  <div className="relative">
+                    <Pencil className="pointer-events-none absolute end-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      id="edit-password"
+                      type="password"
+                      className="pe-10"
+                      dir="ltr"
+                      value={editPassword}
+                      onChange={(e) => setEditPassword(e.target.value)}
+                      autoComplete="off"
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="flex gap-2 pt-2">
+                <Button type="button" disabled={savingUserData} onClick={handleSaveUserData}>
+                  حفظ بيانات المستخدم
                 </Button>
               </div>
-            </div>
-          ) : (
-            <>
-              <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                <ShieldCheck className="h-4 w-4 text-emerald-500" />
-                <span>تم التحقق — يمكنك تعديل الإعدادات</span>
+            </CardContent>
+          </Card>
+
+          {/* ──────── الصلاحيات ──────── */}
+          <Card className="border-border/60 shadow-[var(--shadow-card)]">
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <ShieldCheck className="h-5 w-5" />
+                </div>
+                <div>
+                  <CardTitle className="text-lg">الصلاحيات</CardTitle>
+                  <CardDescription>تحكم في صلاحيات المستخدم</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="flex items-center gap-2 rounded-lg bg-muted/50 px-4 py-3 text-sm">
+                <Users className="h-4 w-4 text-primary" />
+                <span>جار تعديل صلاحيات: <strong>{selectedUserName}</strong></span>
               </div>
 
-              {/* الصلاحيات — 2-column grid */}
               <div className="grid gap-4 sm:grid-cols-2">
                 {LOCK_ITEMS.map(({ key, label, description, icon: Icon }) => (
                   <LockToggle
                     key={key}
-                    id={`my-${key}`}
+                    id={`lock-${key}`}
                     label={label}
                     description={description}
                     icon={Icon}
@@ -217,7 +349,6 @@ export function SettingsPageClient({ userEmail }) {
                 ))}
               </div>
 
-              {/* Commission percents */}
               <div className="grid gap-4 border-t border-border pt-6 sm:grid-cols-2">
                 <div className="max-w-xs flex-1">
                   <div className="space-y-2">
@@ -269,39 +400,62 @@ export function SettingsPageClient({ userEmail }) {
                 </div>
               </div>
 
-              {/* New password + save */}
-              <div className="flex flex-col gap-4 border-t border-border pt-6 sm:flex-row sm:items-end">
-                <div className="max-w-xs flex-1">
-                  <PasswordField
-                    id="new-lock-password"
-                    label="تغيير كلمة المرور (اختياري)"
-                    value={newPassword}
-                    onChange={setNewPassword}
-                  />
-                </div>
-                <Button type="button" disabled={saving} onClick={handleSaveLocks}>
-                  حفظ التغييرات
+              <div className="flex border-t border-border pt-6">
+                <Button type="button" disabled={saving || !selectedUserDocId} onClick={handleSaveLocks}>
+                  حفظ الصلاحيات
                 </Button>
               </div>
-            </>
-          )}
-        </CardContent>
-      </Card>
+            </CardContent>
+          </Card>
+
+          {/* ──────── حذف المستخدم ──────── */}
+          <Card className="border-border/60 shadow-[var(--shadow-card)] border-destructive/30">
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-destructive/10 text-destructive">
+                  <Trash2 className="h-5 w-5" />
+                </div>
+                <div>
+                  <CardTitle className="text-lg text-destructive">حذف المستخدم</CardTitle>
+                  <CardDescription>هذا الإجراء لا يمكن التراجع عنه</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {!confirmDelete ? (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  disabled={selectedUserEmail === userEmail}
+                  title={selectedUserEmail === userEmail ? "لا يمكن حذف حسابك الحالي" : ""}
+                  onClick={() => setConfirmDelete(true)}
+                >
+                  <Trash2 className="ms-1 h-4 w-4" /> حذف المستخدم
+                </Button>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-sm text-destructive">
+                    هل أنت متأكد من حذف المستخدم <strong>{selectedUserName}</strong>؟ هذا الإجراء لا يمكن التراجع عنه.
+                  </p>
+                  <div className="flex gap-2">
+                    <Button type="button" variant="destructive" disabled={deleting} onClick={handleDeleteUser}>
+                      {deleting ? "جار الحذف..." : "تأكيد الحذف"}
+                    </Button>
+                    <Button type="button" variant="outline" disabled={deleting} onClick={() => setConfirmDelete(false)}>
+                      إلغاء
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </>
+      )}
     </div>
   );
 }
 
 /* ───────── helpers ───────── */
-
-/** @param {{ id: string; label: string; value: string; onChange: (v: string) => void }} p */
-function PasswordField({ id, label, value, onChange }) {
-  return (
-    <div className="space-y-2">
-      <Label htmlFor={id} className="text-sm font-medium">{label}</Label>
-      <Input id={id} type="password" value={value} onChange={(e) => onChange(e.target.value)} autoComplete="off" />
-    </div>
-  );
-}
 
 /**
  * @param {{
